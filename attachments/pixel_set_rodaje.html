@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PIXEL SET — Simulador de Rodaje</title>
+<style>
+  :root{--ink:#e8e2d0;--bg:#0d0b12;--panel:#171320;--accent:#ffcf5c;--red:#ff5d5d;--green:#6fe3a1;}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 50% 20%,#1b1526,#08070c 70%);color:var(--ink);font-family:"Courier New",monospace;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+  header{padding:18px 10px 6px;text-align:center}
+  h1{margin:0;font-size:clamp(20px,4vw,34px);letter-spacing:3px;color:var(--accent);text-shadow:3px 3px 0 #000}
+  p.sub{margin:4px 0 14px;font-size:12px;opacity:.75}
+  #stageWrap{position:relative;width:min(96vw,1100px);border:4px solid #2b2338;border-radius:10px;overflow:hidden;box-shadow:0 18px 50px #000a;background:#000}
+  canvas{display:block;width:100%;image-rendering:pixelated}
+  #hud{position:absolute;left:10px;top:10px;background:#000a;border:2px solid #3a2f4d;padding:8px 10px;font-size:11px;line-height:1.5;max-width:290px}
+  #hud b{color:var(--accent)}
+  #controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;padding:12px}
+  button{font-family:inherit;font-size:12px;letter-spacing:1px;background:var(--panel);color:var(--ink);border:2px solid #4a3d61;padding:9px 12px;cursor:pointer;border-radius:4px}
+  button:hover{background:#241c31;border-color:var(--accent);color:var(--accent)}
+  button:active{transform:translateY(1px)}
+  #log{width:min(96vw,1100px);height:130px;overflow:auto;background:#0f0c16;border:3px solid #2b2338;border-radius:8px;padding:10px;font-size:12px;line-height:1.45;margin-bottom:20px}
+  .line{margin:2px 0}
+  .dir{color:var(--accent)} .angry{color:var(--red)} .ok{color:var(--green)}
+  footer{font-size:10px;opacity:.5;padding-bottom:18px}
+</style>
+</head>
+<body>
+<header>
+  <h1>PIXEL SET</h1>
+  <p class="sub">SIMULADOR DE RODAJE — LOS JEFES DE DEPARTAMENTO TRABAJAN, DISCUTEN Y SE ENOJAN</p>
+</header>
+
+<div id="stageWrap">
+  <canvas id="game" width="480" height="270"></canvas>
+  <div id="hud">
+    <b>ESTADO DEL SET</b><br>
+    <span id="mood">Todo bajo control… por ahora.</span><br>
+    <span id="takes">Toma: 1</span> · <span id="stress">Estrés: 0%</span>
+  </div>
+</div>
+
+<div id="controls">
+  <button onclick="startScene()">▶ Iniciar escena</button>
+  <button onclick="directorScold()">📣 Director reta a alguien</button>
+  <button onclick="addChaos()">🔥 Problema en el set</button>
+  <button onclick="calmAll()">🎬 “¡Corten! Pausa”</button>
+</div>
+
+<div id="log"></div>
+<footer>Hecho como prototipo de agente revisor de estructuras narrativas. Cada personaje representa un departamento.</footer>
+
+<script>
+const cv=document.getElementById('game'),ctx=cv.getContext('2d');
+const W=cv.width,H=cv.height;
+const log=document.getElementById('log');
+const moodEl=document.getElementById('mood'),takesEl=document.getElementById('takes'),stressEl=document.getElementById('stress');
+
+let stress=0,take=1,running=false,t=0;
+let bubbles=[];
+
+const jobs={
+ DIRECCION:{c:'#ffcf5c',x:70,y:120,role:'DIRECTOR',line:'¡A sus puestos! Queremos emoción, no sólo planos lindos.'},
+ GUION:{c:'#8fd3ff',x:150,y:90,role:'GUIONISTA',line:'Esta escena necesita un objetivo claro y un giro.'},
+ CAMARA:{c:'#b7ff8a',x:230,y:80,role:'CÁMARA',line:'Marco el plano, pero necesito luz y marca de actores.'},
+ ILUMINACION:{c:'#ffd9a0',x:310,y:90,role:'ILUMINADOR',line:'Estoy armando la luz. No me muevan el set todavía.'},
+ SONIDO:{c:'#d5aaff',x:390,y:120,role:'SONIDO',line:'Silencio en set. Estoy escuchando un zumbido.'},
+ MONTAJE:{c:'#ff9ecb',x:120,y:180,role:'MONTAJISTA',line:'Sin continuidad no hay relato. Reviso el orden de las tomas.'},
+ PRODUCCION:{c:'#7fe0d6',x:220,y:190,role:'PRODUCTOR',line:'Tenemos tiempo y presupuesto. ¡Cuidado con los retrasos!'},
+ ACTORES:{c:'#ffb3b3',x:320,y:180,role:'ACTOR/ACTRIZ',line:'Estoy buscando la motivación del personaje.'}
+};
+
+const people=Object.entries(jobs).map(([k,v],i)=>({
+ key:k,name:v.role,color:v.c,x:v.x,y:v.y,vx:(Math.random()*2-1)*.25,vy:(Math.random()*2-1)*.15,
+ home:{x:v.x,y:v.y},state:'work',timer:Math.random()*300,angryAt:null,phase:Math.random()*6
+}));
+
+function say(who,text,kind='normal'){
+ bubbles.push({who,text,life:260,kind});
+ const cls=kind==='angry'?'angry':kind==='dir'?'dir':'ok';
+ log.insertAdjacentHTML('afterbegin',`<div class="line ${cls}"><b>${who}:</b> ${text}</div>`);
+ while(log.children.length>60)log.lastChild.remove();
+}
+
+function startScene(){
+ running=true; stress=Math.max(0,stress-15);
+ moodEl.textContent='Rodando…'; moodEl.style.color='var(--green)';
+ say('DIRECCIÓN','¡Acción! Todos concentrados.','dir');
+ people.forEach(p=>{p.state='work';p.angryAt=null;});
+}
+
+function directorScold(){
+ const candidates=people.filter(p=>p.key!=='DIRECCION');
+ const p=candidates[Math.floor(Math.random()*candidates.length)];
+ const complaints={
+  GUION:'El conflicto no avanza. ¿Cuál es el objetivo de la escena?',
+  CAMARA:'Ese encuadre no acompaña el punto de vista del personaje.',
+  ILUMINACION:'La luz está plana; no genera la emoción que pedí.',
+  SONIDO:'Hay ruido. No puedo dirigir una escena que no se escucha.',
+  MONTAJE:'Estás cortando antes del gesto. Perdemos continuidad emocional.',
+  PRODUCCION:'No podemos perder más tiempo. Organizá el cambio de set.',
+  ACTORES:'Necesito más intención. El personaje quiere algo: mostrámelo.'
+ };
+ p.state='angry';p.angryAt='DIRECCION';p.timer=280;stress=Math.min(100,stress+18);
+ say('DIRECCIÓN',`¡${p.name}! ${complaints[p.key]}`,'dir');
+ say(p.name,pick(['¡Está bien, director! Lo corrijo ya.','No me presione, estoy resolviéndolo.','Uf… está bien. Vuelvo a trabajar.','¡No es tan fácil como parece!']), 'angry');
+ moodEl.textContent='Tensión en el set.';moodEl.style.color='var(--red)';
+}
+
+function addChaos(){
+ const p=people[Math.floor(Math.random()*people.length)];
+ if(p.key==='DIRECCION'){say('DIRECCIÓN','¡Corten! Algo no funciona en esta escena.','dir');return;}
+ p.state='angry';p.angryAt='DIRECCION';p.timer=300;stress=Math.min(100,stress+25);
+ const issue={
+  GUION:'Se me cayó una página del guion y cambió el orden de las escenas.',
+  CAMARA:'Se trabó la tarjeta. Perdimos la última toma.',
+  ILUMINACION:'Se fundió una luz y cambió todo el clima de la escena.',
+  SONIDO:'Entró un ruido de tráfico. Hay que repetir.',
+  MONTAJE:'Las tomas no cierran: cambió la posición de un objeto.',
+  PRODUCCION:'Se retrasó el permiso para esta locación.',
+  ACTORES:'Perdí el hilo emocional del personaje.'
+ }[p.key];
+ say(p.name,issue,'angry');
+ say('DIRECCIÓN',`¡${p.name}, resolvé eso! No podemos avanzar así.`,'dir');
+ moodEl.textContent='¡Problema técnico/artístico en el set!';moodEl.style.color='var(--red)';
+}
+
+function calmAll(){
+ people.forEach(p=>{p.state='work';p.angryAt=null;p.timer=0;});
+ stress=Math.max(0,stress-35);
+ say('DIRECCIÓN','¡Corten! Pausa de cinco minutos. Respiramos y volvemos.','dir');
+ moodEl.textContent='Pausa. El set se calma.';moodEl.style.color='var(--accent)';
+}
+
+function pick(a){return a[Math.floor(Math.random()*a.length)]}
+
+function update(){
+ t++;
+ if(running){
+  people.forEach(p=>{
+   if(p.state==='work'){
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<20||p.x>W-20)p.vx*=-1;
+    if(p.y<70||p.y>H-30)p.vy*=-1;
+    p.timer--;
+    if(p.timer<0){
+      p.timer=300+Math.random()*500;
+      if(Math.random()<.35){
+        const other=people[Math.floor(Math.random()*people.length)];
+        if(other!==p){
+          const chat={
+           'GUION|CAMARA':'El plano debe revelar la información en el momento justo.',
+           'CAMARA|ILUMINACION':'Necesito más contraste en el lado izquierdo.',
+           'SONIDO|PRODUCCION':'Necesito silencio absoluto para esta toma.',
+           'MONTAJE|GUION':'Si quitamos esta escena, el arco queda más claro.',
+           'ACTORES|DIRECCION':'¿El personaje ya sabe que fue traicionado?',
+           'PRODUCCION|DIRECCION':'Si repetimos muchas veces, perdemos la luz.',
+           'ILUMINACION|CAMARA':'Listo, ya tengo la key light armada.',
+           'DIRECCION|ACTORES':'Probemos otra vez, pero con menos explicación y más deseo.'
+          };
+          const k1=p.key+'|'+other.key,k2=other.key+'|'+p.key;
+          const line=chat[k1]||chat[k2];
+          if(line&&Math.random()<.7){say(p.name,line);say(other.name,pick(['De acuerdo.','Lo tengo en cuenta.','Voy a ajustarlo.','Dale, probemos.','Anotado.']));}
+        }
+      }
+    }
+   }else if(p.state==='angry'){
+    p.x+=(p.home.x-p.x)*.03;p.y+=(p.home.y-p.y)*.03;
+    p.timer--;
+    if(p.timer<0){
+      p.state='work';p.angryAt=null;p.timer=400+Math.random()*400;
+      say(p.name,pick(['Listo, ya está resuelto.','Volví al trabajo.','Quedó corregido.','Sigo con esto.']), 'ok');
+      stress=Math.max(0,stress-8);
+    }
+   }
+  });
+  if(t%600===0&&running){
+   take++;takesEl.textContent='Toma: '+take;
+   say('PRODUCCION',`Preparando la toma ${take}.`,'ok');
+  }
+  if(t%900===0&&running&&stress>55){
+   const p=people.filter(x=>x.key!=='DIRECCION')[Math.floor(Math.random()*6)];
+   p.state='angry';p.angryAt='DIRECCION';p.timer=280;
+   say('DIRECCIÓN',`¡${p.name}! Esto se está desordenando. Enfoque.`,'dir');
+   say(p.name,pick(['¡Estoy haciendo lo que puedo!','Está bien, ya vuelvo.','No me griten, coordino.','Entiendo. Lo reviso.']), 'angry');
+  }
+ }
+ bubbles.forEach(b=>b.life--);
+ bubbles=bubbles.filter(b=>b.life>0);
+ stressEl.textContent='Estrés: '+Math.round(stress)+'%';
+}
+
+function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
+
+function drawPerson(p){
+ const bob=Math.sin(t*.08+p.phase)*1.5;
+ const x=p.x,y=p.y+bob;
+ // shadow
+ ctx.fillStyle='rgba(0,0,0,.35)';ctx.beginPath();ctx.ellipse(p.x,p.y+16,9,3,0,0,7);ctx.fill();
+ // legs
+ px(x-5,y+8,3,7,'#222');px(x+2,y+8,3,7,'#222');
+ // body
+ px(x-6,y-2,12,11,p.color);
+ // head
+ px(x-5,y-11,10,9,'#f0c9a0');
+ // hair
+ px(x-5,y-13,10,3,'#241a2a');
+ // eyes
+ const eye=p.state==='angry'?'#ff2e2e':'#111';
+ px(x-3,y-8,2,2,eye);px(x+1,y-8,2,2,eye);
+ // angry mark
+ if(p.state==='angry'){
+  ctx.strokeStyle='#ff5d5d';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(x-9,y-16);ctx.lineTo(x-4,y-12);ctx.moveTo(x+9,y-16);ctx.lineTo(x+4,y-12);ctx.stroke();
+ }
+ // name
+ ctx.font='6px monospace';ctx.textAlign='center';
+ ctx.fillStyle='#000';ctx.fillText(p.name,p.x+1,p.y+27);
+ ctx.fillStyle=p.color;ctx.fillText(p.name,p.x,p.y+26);
+}
+
+function drawSet(){
+ // floor
+ ctx.fillStyle='#221a2c';ctx.fillRect(0,120,W,H-120);
+ for(let i=0;i<W;i+=16){ctx.fillStyle=i%32?'#241c30':'#1f182a';ctx.fillRect(i,120,16,H-120)}
+ // back wall
+ ctx.fillStyle='#171221';ctx.fillRect(0,0,W,120);
+ for(let i=0;i<W;i+=24){ctx.fillStyle='#1d1729';ctx.fillRect(i,0,2,120)}
+ // window
+ px(40,20,70,45,'#2c3f66');px(44,24,62,37,'#4d6ea8');
+ // camera dolly
+ px(210,150,70,10,'#333');px(220,160,8,18,'#222');px(262,160,8,18,'#222');
+ px(230,130,30,20,'#444');px(238,136,12,8,'#111');
+ // lights
+ px(370,35,4,35,'#555');px(360,30,24,12,'#ffcf5c');
+ ctx.fillStyle='rgba(255,207,92,.18)';ctx.beginPath();ctx.moveTo(372,42);ctx.lineTo(300,120);ctx.lineTo(430,120);ctx.closePath();ctx.fill();
+ // clapperboard
+ ctx.save();ctx.translate(430,200);ctx.rotate(-.15);
+ px(0,0,34,22,'#111');px(0,0,34,6,'#eee');
+ for(let i=2;i<34;i+=8)px(i,0,4,6,'#111');
+ ctx.fillStyle='#fff';ctx.font='6px monospace';ctx.fillText('ESC. 12',4,16);ctx.restore();
+ // director chair
+ px(60,185,4,30,'#6b4a2a');px(84,185,4,30,'#6b4a2a');px(58,180,32,6,'#8a5f36');
+}
+
+function drawBubbles(){
+ bubbles.forEach(b=>{
+  const p=b.who;const person=people.find(x=>x.name===p);if(!person)return;
+  const text=b.text;ctx.font='7px monospace';
+  const words=text.split(' ');let lines=[],cur='';
+  words.forEach(w=>{if(ctx.measureText(cur+' '+w).width>130){lines.push(cur);cur=w}else cur=cur?cur+' '+w:w});
+  if(cur)lines.push(cur);
+  const bw=Math.min(150,Math.max(...lines.map(l=>ctx.measureText(l).width))+14);
+  const bh=lines.length*9+10;
+  let bx=Math.min(W-bw-4,Math.max(4,person.x-bw/2));
+  let by=person.y-24-bh;if(by<4)by=person.y+24;
+  ctx.fillStyle=b.kind==='angry'?'rgba(60,10,20,.92)':b.kind==='dir'?'rgba(60,48,10,.92)':'rgba(15,12,25,.92)';
+  ctx.strokeStyle=b.kind==='angry'?'#ff5d5d':b.kind==='dir'?'#ffcf5c':'#8a7fa8';
+  ctx.lineWidth=1;ctx.fillRect(bx,by,bw,bh);ctx.strokeRect(bx,by,bw,bh);
+  ctx.fillStyle=b.kind==='angry'?'#ffb3b3':b.kind==='dir'?'#ffe9a8':'#e8e2d0';
+  lines.forEach((l,i)=>ctx.fillText(l,bx+7,by+11+i*9));
+ });
+}
+
+function loop(){
+ update();
+ ctx.clearRect(0,0,W,H);
+ drawSet();
+ people.forEach(drawPerson);
+ drawBubbles();
+ requestAnimationFrame(loop);
+}
+
+say('DIRECCIÓN','Bienvenidos al set. Hoy buscamos una estructura que sostenga la emoción.','dir');
+say('GUIONISTA','Tengo el conflicto principal, pero falta decidir qué sabe el espectador.','ok');
+say('MONTAJISTA','Cuando tengamos material, reviso ritmo, elipsis y continuidad.','ok');
+say('SONIDO','Y yo cuido que el ambiente no rompa la escena.','ok');
+loop();
+</script>
+</body>
+</html>
