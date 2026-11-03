@@ -76,6 +76,8 @@ export type Hud = {
   quality: number;
   mood: string;
   paused: boolean;
+  timeLeft: number;
+  objective: string;
   people: HudPerson[];
 };
 
@@ -116,6 +118,7 @@ export function createSim(onLog: (line: LogLine) => void) {
   let paused = false;
   let shake = 0;
   let time = 0;
+  let timeLeft = 90;
   let chatCooldown = 2.2;
   let pending: Chat | null = null;
   const particles: Particle[] = [];
@@ -263,6 +266,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       say(producer, `Toma ${take} enlatada. Pasamos a la siguiente.`, "ok");
       burst("confetti", 0.5, 0.7, 18);
       take += 1;
+      timeLeft = 90;
       sceneIndex = (sceneIndex + 1) % SCENES.length;
       quality = 0;
       stress = clamp(stress - 28, 0, 100);
@@ -271,6 +275,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       say(director, "¡Corten! Esta toma no sirve. Otra vez, desde el principio.", "dir");
       quality = clamp(quality - 35, 0, 100);
       stress = 38;
+      timeLeft = 90;
       shake = 1.2;
       for (const p of people) {
         if (p.id === "director") continue;
@@ -382,6 +387,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     }
 
     if (!paused) {
+      timeLeft = Math.max(0, timeLeft - dt);
       const director = byId("director");
       const sleeper = people.find((p) => p.state === "sleep" && p.napping);
       if (sleeper && director.state === "work") {
@@ -427,10 +433,10 @@ export function createSim(onLog: (line: LogLine) => void) {
         else if (p.state === "angry") angry += 1;
         else if (p.state === "work" || p.state === "talk") working += 1;
       }
-      quality = clamp(quality + (working * 0.55 - sleeping * 1.3 - angry * 0.35) * dt, 0, 100);
+      quality = clamp(quality + (working * 0.18 - sleeping * 1.3 - angry * 0.55) * dt, 0, 100);
       stress = clamp(stress + (sleeping * 0.85 + angry * 0.35 - (sleeping + angry === 0 ? 0.22 : 0)) * dt, 0, 100);
       if (quality >= 100) finishTake(true);
-      else if (stress >= 100) finishTake(false);
+      else if (stress >= 100 || timeLeft <= 0) finishTake(false);
     }
 
     for (const particle of particles) {
@@ -485,6 +491,22 @@ export function createSim(onLog: (line: LogLine) => void) {
     say(byId("director"), `¡${target.name}, resolvé eso! No podemos seguir así.`, "dir");
   }
 
+  function coordinate() {
+    paused = false;
+    stress = clamp(stress - 14, 0, 100);
+    const target = people.find((p) => p.state === "sleep" || p.state === "angry");
+    if (target) {
+      if (pending && (pending.a === target.id || pending.b === target.id)) cancelChat();
+      release(target);
+      target.cooldown = 12;
+      target.boredom = 0;
+      say(byId("director"), `Coordino con ${target.name}. Volvemos al plan.`, "dir");
+      say(target, "Entendido. Retomo mi puesto.", "ok");
+    } else {
+      say(byId("director"), "Equipo alineado. Mantengan el ritmo y cuiden la toma.", "dir");
+    }
+  }
+
   function corten() {
     paused = true;
     cancelChat();
@@ -533,6 +555,8 @@ export function createSim(onLog: (line: LogLine) => void) {
       quality: Math.round(quality),
       mood: moodText(),
       paused,
+      timeLeft: Math.ceil(timeLeft),
+      objective: quality >= 65 ? "Sostené el ritmo: estás cerca de cerrar la toma" : "Llevá la calidad al 100% antes de que se agote el tiempo",
       people: people.map((p) => ({
         id: p.id,
         name: p.name,
@@ -543,7 +567,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     };
   }
 
-  return { people, particles, step, accion, scold: scoldRandom, chaos, corten, click, focus, hud, get shake() { return shake; } };
+  return { people, particles, step, accion, coordinate, scold: scoldRandom, chaos, corten, click, focus, hud, get shake() { return shake; } };
 }
 
 export type Sim = ReturnType<typeof createSim>;
