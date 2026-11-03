@@ -1,0 +1,549 @@
+import {
+  ANGRY_REPLIES,
+  BOUNDS,
+  CHATS,
+  COMPLAINTS,
+  CREW,
+  FIXED_REPLIES,
+  FLOOR,
+  ISSUES,
+  SCENES,
+  type CrewId,
+  type Mood,
+} from "@/game/crew";
+
+export type BubbleKind = "dir" | "angry" | "ok";
+
+export type Bubble = {
+  text: string;
+  life: number;
+  kind: BubbleKind;
+};
+
+export type Person = {
+  id: CrewId;
+  name: string;
+  role: string;
+  job: string;
+  x: number;
+  y: number;
+  tx: number;
+  ty: number;
+  homeX: number;
+  homeY: number;
+  facing: 1 | -1;
+  state: Mood;
+  stateTimer: number;
+  decision: number;
+  boredom: number;
+  cooldown: number;
+  napping: boolean;
+  partner: CrewId | null;
+  bubble: Bubble | null;
+  ring: number;
+};
+
+export type Particle = {
+  kind: "z" | "steam" | "confetti";
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  max: number;
+  char: string;
+};
+
+export type LogLine = {
+  id: number;
+  who: string;
+  text: string;
+  kind: BubbleKind;
+};
+
+export type HudPerson = {
+  id: CrewId;
+  name: string;
+  role: string;
+  state: Mood;
+  moving: boolean;
+};
+
+export type Hud = {
+  take: number;
+  scene: string;
+  stress: number;
+  quality: number;
+  mood: string;
+  paused: boolean;
+  people: HudPerson[];
+};
+
+type Chat = {
+  a: CrewId;
+  b: CrewId;
+  line: string;
+  reply: string;
+  said: boolean;
+  age: number;
+};
+
+const SPEED = 0.16;
+const BUBBLE_LIFE = 3.4;
+
+function clamp(v: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, v));
+}
+
+function dist(x1: number, y1: number, x2: number, y2: number) {
+  return Math.hypot(x2 - x1, y2 - y1);
+}
+
+function pick<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)]!;
+}
+
+function clampPoint(x: number, y: number): [number, number] {
+  return [clamp(x, BOUNDS.minX, BOUNDS.maxX), clamp(y, BOUNDS.minY, BOUNDS.maxY)];
+}
+
+export function createSim(onLog: (line: LogLine) => void) {
+  let logId = 1;
+  let take = 1;
+  let sceneIndex = 0;
+  let stress = 12;
+  let quality = 8;
+  let paused = false;
+  let shake = 0;
+  let time = 0;
+  let chatCooldown = 2.2;
+  let pending: Chat | null = null;
+  const particles: Particle[] = [];
+
+  const people: Person[] = CREW.map((c) => ({
+    id: c.id,
+    name: c.name,
+    role: c.role,
+    job: c.job,
+    x: c.homeX,
+    y: c.homeY,
+    tx: c.homeX,
+    ty: c.homeY,
+    homeX: c.homeX,
+    homeY: c.homeY,
+    facing: 1,
+    state: "work" as Mood,
+    stateTimer: 0,
+    decision: 1 + Math.random() * 2,
+    boredom: Math.random() * 3,
+    cooldown: 4,
+    napping: false,
+    partner: null,
+    bubble: null,
+    ring: 0,
+  }));
+
+  const byId = (id: CrewId) => people.find((p) => p.id === id)!;
+
+  function burst(kind: Particle["kind"], x: number, y: number, n: number) {
+    for (let i = 0; i < n; i++) {
+      particles.push({
+        kind,
+        x,
+        y,
+        vx: (Math.random() - 0.5) * 0.08,
+        vy: kind === "confetti" ? -0.05 - Math.random() * 0.08 : -0.03 - Math.random() * 0.04,
+        life: 0.8 + Math.random() * 0.8,
+        max: 1.4,
+        char: kind === "z" ? pick(["z", "z", "Z"]) : "",
+      });
+    }
+    if (particles.length > 90) particles.splice(0, particles.length - 90);
+  }
+
+  function say(p: Person, text: string, kind: BubbleKind) {
+    const active = people.filter((q) => q.bubble);
+    if (active.length >= 2) {
+      active.sort((a, b) => (a.bubble?.life ?? 0) - (b.bubble?.life ?? 0));
+      active[0]!.bubble = null;
+    }
+    p.bubble = { text, life: BUBBLE_LIFE, kind };
+    onLog({ id: logId++, who: p.name, text, kind });
+    if (kind === "angry") shake = Math.max(shake, 0.7);
+    if (kind === "dir") shake = Math.max(shake, 0.45);
+  }
+
+  function cancelChat() {
+    if (!pending) return;
+    const a = byId(pending.a);
+    const b = byId(pending.b);
+    if (a.partner === b.id) a.partner = null;
+    if (b.partner === a.id) b.partner = null;
+    pending = null;
+  }
+
+  function release(p: Person) {
+    p.state = "work";
+    p.partner = null;
+    p.napping = false;
+    p.tx = p.homeX;
+    p.ty = p.homeY;
+    p.decision = 1.5 + Math.random() * 2;
+  }
+
+  function scold(target: Person, reason: "sleep" | "work") {
+    if (target.id === "director") return;
+    const director = byId("director");
+    if (pending && (pending.a === target.id || pending.b === target.id)) cancelChat();
+    target.napping = false;
+    target.state = "angry";
+    target.stateTimer = 2.8;
+    target.partner = "director";
+    target.boredom = 0;
+    target.cooldown = 14;
+    target.facing = director.x < target.x ? -1 : 1;
+    director.state = "angry";
+    director.stateTimer = 1.5;
+    director.partner = target.id;
+    director.facing = target.x < director.x ? -1 : 1;
+    stress = clamp(stress + (reason === "sleep" ? 10 : 16), 0, 100);
+    shake = Math.max(shake, 0.9);
+    if (reason === "sleep") {
+      say(director, `¡${target.name}! Esto no es una siesta. A trabajar.`, "dir");
+      say(target, pick(["¡Ya voy!", "Perdón. Me quedé.", "Está bien, ya estoy."]), "angry");
+    } else {
+      say(director, `¡${target.name}! ${COMPLAINTS[target.id]}`, "dir");
+      say(target, pick(ANGRY_REPLIES), "angry");
+    }
+  }
+
+  function tryChat(): boolean {
+    const pool = people.filter((p) => p.state === "work" && !p.partner);
+    if (pool.length < 2) return false;
+    const options = CHATS.filter((c) => {
+      const a = byId(c.a);
+      const b = byId(c.b);
+      return a.state === "work" && b.state === "work" && !a.partner && !b.partner;
+    });
+    if (!options.length) return false;
+    const chat = pick(options);
+    const a = byId(chat.a);
+    const b = byId(chat.b);
+    const mx = clamp((a.x + b.x) / 2, BOUNDS.minX, BOUNDS.maxX);
+    const my = clamp((a.y + b.y) / 2, BOUNDS.minY, BOUNDS.maxY);
+    a.tx = clamp(mx - 0.035, BOUNDS.minX, BOUNDS.maxX);
+    a.ty = my;
+    b.tx = clamp(mx + 0.035, BOUNDS.minX, BOUNDS.maxX);
+    b.ty = my;
+    a.partner = b.id;
+    b.partner = a.id;
+    pending = { a: a.id, b: b.id, line: chat.line, reply: chat.reply, said: false, age: 0 };
+    return true;
+  }
+
+  function wander(p: Person) {
+    if (p.partner) return;
+    if (Math.random() < 0.55) {
+      const [x, y] = clampPoint(p.homeX + (Math.random() - 0.5) * 0.08, p.homeY + (Math.random() - 0.5) * 0.06);
+      p.tx = x;
+      p.ty = y;
+    } else {
+      const [x, y] = pick(FLOOR);
+      p.tx = x;
+      p.ty = y;
+    }
+    p.decision = 2.4 + Math.random() * 3.2;
+  }
+
+  function finishTake(ok: boolean) {
+    const director = byId("director");
+    const producer = byId("produccion");
+    if (ok) {
+      say(director, "¡Corte! Esa queda. Impriman.", "dir");
+      say(producer, `Toma ${take} enlatada. Pasamos a la siguiente.`, "ok");
+      burst("confetti", 0.5, 0.7, 18);
+      take += 1;
+      sceneIndex = (sceneIndex + 1) % SCENES.length;
+      quality = 0;
+      stress = clamp(stress - 28, 0, 100);
+      shake = Math.max(shake, 0.6);
+    } else {
+      say(director, "¡Corten! Esta toma no sirve. Otra vez, desde el principio.", "dir");
+      quality = clamp(quality - 35, 0, 100);
+      stress = 38;
+      shake = 1.2;
+      for (const p of people) {
+        if (p.id === "director") continue;
+        p.state = "angry";
+        p.stateTimer = 1.8;
+        p.napping = false;
+        p.boredom = 0;
+      }
+    }
+  }
+
+  function moodText() {
+    if (paused) return "Pausa. El set respira.";
+    if (stress > 78) return "El set está al límite.";
+    if (people.some((p) => p.state === "sleep")) return "Alguien se está durmiendo en el set.";
+    if (people.some((p) => p.state === "angry")) return "Tensión entre departamentos.";
+    if (quality > 82) return "Esta toma está por cerrar.";
+    return "Rodando. Los departamentos trabajan.";
+  }
+
+  function step(dt: number) {
+    time += dt;
+    shake = Math.max(0, shake - dt * 1.4);
+    chatCooldown -= dt;
+
+    for (const p of people) {
+      if (p.bubble) {
+        p.bubble.life -= dt;
+        if (p.bubble.life <= 0) p.bubble = null;
+      }
+      p.ring = Math.max(0, p.ring - dt);
+      p.cooldown = Math.max(0, p.cooldown - dt);
+
+      if (p.state === "angry" || p.state === "talk" || p.state === "sleep") {
+        p.stateTimer -= dt;
+        if (p.stateTimer <= 0) {
+          if (p.state === "angry" && p.id !== "director") {
+            say(p, pick(FIXED_REPLIES), "ok");
+            stress = clamp(stress - 6, 0, 100);
+          }
+          if (p.state === "sleep") {
+            say(p, "Uy. Me quedé. Sigo.", "ok");
+            p.cooldown = 10;
+          }
+          release(p);
+        }
+      } else if (!paused && p.state === "work") {
+        p.decision -= dt;
+        const atHome = dist(p.x, p.y, p.homeX, p.homeY) < 0.05;
+        if (atHome && p.id !== "director") p.boredom += dt;
+        else p.boredom = Math.max(0, p.boredom - dt * 0.5);
+        if (
+          p.id !== "director" &&
+          atHome &&
+          p.cooldown <= 0 &&
+          !p.partner &&
+          p.boredom > 9 &&
+          Math.random() < dt * 0.35
+        ) {
+          p.state = "sleep";
+          p.stateTimer = 7 + Math.random() * 4;
+          p.napping = true;
+          p.boredom = 0;
+          p.tx = p.x;
+          p.ty = p.y;
+        } else if (p.decision <= 0 && !p.partner) {
+          wander(p);
+        }
+      }
+
+      if (p.state === "sleep" && Math.random() < dt * 1.6) burst("z", p.x, p.y - 0.1, 1);
+      if (p.state === "angry" && Math.random() < dt * 2.2) burst("steam", p.x, p.y - 0.12, 1);
+
+      const canMove = p.state === "work" || (p.state === "talk" && false);
+      if (canMove || (p.id === "director" && p.state === "work")) {
+        const dx = p.tx - p.x;
+        const dy = p.ty - p.y;
+        const d = Math.hypot(dx, dy);
+        if (d > 0.008) {
+          const stepDist = Math.min(d, SPEED * dt);
+          p.x += (dx / d) * stepDist;
+          p.y += (dy / d) * stepDist;
+          if (dx < -0.004) p.facing = -1;
+          else if (dx > 0.004) p.facing = 1;
+        }
+      }
+    }
+
+    for (let i = 0; i < people.length; i++) {
+      for (let j = i + 1; j < people.length; j++) {
+        const a = people[i]!;
+        const b = people[j]!;
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const d = Math.hypot(dx, dy) || 0.0001;
+        if (d < 0.04) {
+          const push = ((0.04 - d) / d) * 0.35;
+          a.x += dx * push;
+          a.y += dy * push;
+          b.x -= dx * push;
+          b.y -= dy * push;
+        }
+      }
+    }
+    for (const p of people) {
+      const [x, y] = clampPoint(p.x, p.y);
+      p.x = x;
+      p.y = y;
+    }
+
+    if (!paused) {
+      const director = byId("director");
+      const sleeper = people.find((p) => p.state === "sleep" && p.napping);
+      if (sleeper && director.state === "work") {
+        if (pending && (pending.a === "director" || pending.b === "director" || pending.a === sleeper.id || pending.b === sleeper.id)) {
+          cancelChat();
+        }
+        director.partner = null;
+        director.tx = sleeper.x;
+        director.ty = clamp(sleeper.y - 0.03, BOUNDS.minY, BOUNDS.maxY);
+        if (dist(director.x, director.y, sleeper.x, sleeper.y) < 0.08) scold(sleeper, "sleep");
+      }
+
+      if (pending) {
+        pending.age += dt;
+        const a = byId(pending.a);
+        const b = byId(pending.b);
+        const ready =
+          dist(a.x, a.y, a.tx, a.ty) < 0.03 && dist(b.x, b.y, b.tx, b.ty) < 0.03;
+        if (!pending.said && (ready || pending.age > 7)) {
+          pending.said = true;
+          a.state = "talk";
+          b.state = "talk";
+          a.stateTimer = 2.6;
+          b.stateTimer = 2.6;
+          a.tx = a.x;
+          a.ty = a.y;
+          b.tx = b.x;
+          b.ty = b.y;
+          say(a, pending.line, a.id === "director" ? "dir" : "ok");
+          say(b, pending.reply, b.id === "director" ? "dir" : "ok");
+          pending = null;
+          chatCooldown = 5.5;
+        }
+      } else if (chatCooldown <= 0) {
+        if (!tryChat()) chatCooldown = 1.6;
+      }
+
+      let working = 0;
+      let sleeping = 0;
+      let angry = 0;
+      for (const p of people) {
+        if (p.state === "sleep") sleeping += 1;
+        else if (p.state === "angry") angry += 1;
+        else if (p.state === "work" || p.state === "talk") working += 1;
+      }
+      quality = clamp(quality + (working * 0.55 - sleeping * 1.3 - angry * 0.35) * dt, 0, 100);
+      stress = clamp(stress + (sleeping * 0.85 + angry * 0.35 - (sleeping + angry === 0 ? 0.22 : 0)) * dt, 0, 100);
+      if (quality >= 100) finishTake(true);
+      else if (stress >= 100) finishTake(false);
+    }
+
+    for (const particle of particles) {
+      particle.life -= dt;
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+    }
+    for (let i = particles.length - 1; i >= 0; i--) {
+      if (particles[i]!.life <= 0) particles.splice(i, 1);
+    }
+  }
+
+  function accion() {
+    paused = false;
+    stress = clamp(stress - 10, 0, 100);
+    const director = byId("director");
+    say(director, "¡Acción! Todos a sus puestos.", "dir");
+    for (const p of people) {
+      p.boredom = 0;
+      p.cooldown = Math.max(p.cooldown, 6);
+      if (p.state === "sleep") {
+        p.napping = false;
+        release(p);
+        say(p, "¡Estoy!", "ok");
+      }
+    }
+  }
+
+  function scoldRandom() {
+    const pool = people.filter((p) => p.id !== "director");
+    const sleepers = pool.filter((p) => p.state === "sleep");
+    const target = pick(sleepers.length ? sleepers : pool);
+    const director = byId("director");
+    director.x = clamp(target.x - 0.06, BOUNDS.minX, BOUNDS.maxX);
+    director.y = target.y;
+    scold(target, target.state === "sleep" ? "sleep" : "work");
+  }
+
+  function chaos() {
+    const pool = people.filter((p) => p.id !== "director");
+    const target = pick(pool);
+    if (pending && (pending.a === target.id || pending.b === target.id)) cancelChat();
+    target.state = "angry";
+    target.stateTimer = 3.1;
+    target.napping = false;
+    target.boredom = 0;
+    target.partner = "director";
+    stress = clamp(stress + 22, 0, 100);
+    quality = clamp(quality - 8, 0, 100);
+    shake = Math.max(shake, 1);
+    say(target, ISSUES[target.id as Exclude<CrewId, "director">], "angry");
+    say(byId("director"), `¡${target.name}, resolvé eso! No podemos seguir así.`, "dir");
+  }
+
+  function corten() {
+    paused = true;
+    cancelChat();
+    stress = clamp(stress - 30, 0, 100);
+    for (const p of people) {
+      p.boredom = 0;
+      p.napping = false;
+      p.partner = null;
+      if (p.state === "sleep" || p.state === "angry" || p.state === "talk") release(p);
+      else {
+        p.tx = p.homeX;
+        p.ty = p.homeY;
+      }
+    }
+    say(byId("director"), "¡Corten! Pausa de cinco minutos. Respiramos y volvemos.", "dir");
+  }
+
+  function focus(id: CrewId) {
+    const p = byId(id);
+    click(p.x, p.y - 0.06);
+  }
+
+  function click(nx: number, ny: number) {
+    let best: Person | null = null;
+    let bestD = 0.09;
+    for (const p of people) {
+      const d = dist(nx, ny, p.x, p.y - 0.06);
+      if (d < bestD) {
+        best = p;
+        bestD = d;
+      }
+    }
+    if (!best) return;
+    best.ring = 2.2;
+    if (best.state === "sleep") say(best, "Shh… cinco minutos y vuelvo.", "ok");
+    else if (best.state === "angry") say(best, "Ya lo estoy arreglando. No me apuren.", "angry");
+    else if (best.state === "talk") say(best, "Estoy en esto con el equipo.", "ok");
+    else say(best, best.job, best.id === "director" ? "dir" : "ok");
+  }
+
+  function hud(): Hud {
+    return {
+      take,
+      scene: SCENES[sceneIndex] ?? SCENES[0]!,
+      stress: Math.round(stress),
+      quality: Math.round(quality),
+      mood: moodText(),
+      paused,
+      people: people.map((p) => ({
+        id: p.id,
+        name: p.name,
+        role: p.role,
+        state: p.state,
+        moving: p.state === "work" && dist(p.x, p.y, p.tx, p.ty) > 0.02,
+      })),
+    };
+  }
+
+  return { people, particles, step, accion, scold: scoldRandom, chaos, corten, click, focus, hud, get shake() { return shake; } };
+}
+
+export type Sim = ReturnType<typeof createSim>;

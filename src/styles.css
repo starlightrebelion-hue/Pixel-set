@@ -1,0 +1,33 @@
+@import url("https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@700&family=Source+Sans+3:wght@400;600;700&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #12100e;
+  --color-surface: #211c17;
+  --color-fg: #f4ecdf;
+  --color-muted: #b3a48f;
+  --color-primary: #e2b340;
+  --color-danger: #d4533c;
+  --color-border: #3a322a;
+  --font-display: "Libre Baskerville", Georgia, serif;
+  --font-sans: "Source Sans 3", "Segoe UI", sans-serif;
+  --radius: 0.5rem;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  html,
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    min-height: 100vh;
+  }
+}
