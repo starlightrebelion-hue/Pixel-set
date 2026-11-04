@@ -118,12 +118,39 @@ export function createCustomStory(
     .replace(/^-|-$/g, "")
     .slice(0, 32) || "historia";
 
+  const beats: Record<StoryGenre, Array<{ title: string; briefing: string }>> = {
+    Drama: [
+      { title: "La herida inicial", briefing: "Presentá el conflicto de tu película y conseguí que el equipo encuentre el tono." },
+      { title: "La decisión difícil", briefing: "La historia se complica. Organizá los departamentos antes de la escena decisiva." },
+      { title: "Lo que queda", briefing: "Filmá el desenlace y cerrá la historia con el equipo unido." },
+    ],
+    Comedia: [
+      { title: "El primer blooper", briefing: "Arrancá la película sin que el caos se adueñe del set." },
+      { title: "Enredos en el set", briefing: "Los contratiempos se acumulan. Volvé a reunir al equipo." },
+      { title: "El remate final", briefing: "Prepará el último gag y conseguí una toma que cierre la comedia." },
+    ],
+    Suspenso: [
+      { title: "Una pista fuera de lugar", briefing: "Plantá la primera pista y mantené la continuidad de la escena." },
+      { title: "La verdad se acerca", briefing: "La tensión aumenta. Coordiná cámara, guion y montaje." },
+      { title: "El plano que revela todo", briefing: "Filmá la revelación final antes de que se agote la jornada." },
+    ],
+    Documental: [
+      { title: "La primera entrevista", briefing: "Prepará el equipo y capturá el testimonio inicial." },
+      { title: "La historia detrás", briefing: "Ordená las entrevistas y mantené al equipo enfocado." },
+      { title: "La última evidencia", briefing: "Registrá el cierre y completá el documental con calma." },
+    ],
+  };
+
   return {
     id: `custom-${slug}-${Date.now().toString(36)}`,
     title: safeTitle,
     premise: safePremise,
     genre,
-    chapters: STYLE_CHAPTERS[style].map((item) => ({ ...item })),
+    chapters: STYLE_CHAPTERS[style].map((item, index) => ({
+      ...item,
+      title: beats[genre][index]?.title ?? item.title,
+      briefing: `${beats[genre][index]?.briefing ?? item.briefing} ${item.briefing}`,
+    })),
     custom: true,
   };
 }
