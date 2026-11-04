@@ -29,8 +29,8 @@ if errorlevel 1 (
 
 REM Comprobar el ejecutable real de Vite, no solo la carpeta node_modules.
 if not exist "node_modules\.bin\vite.cmd" (
-  echo No se encontro Vite. Instalando dependencias desde package-lock.json...
-  call npm ci
+  echo No se encontro Vite. Sincronizando package.json y package-lock.json e instalando dependencias...
+  call npm install
   if errorlevel 1 (
     echo.
     echo ERROR: No se pudieron instalar las dependencias.
@@ -44,7 +44,7 @@ REM Verificacion final para evitar el error "spawn vite ENOENT".
 if not exist "node_modules\.bin\vite.cmd" (
   echo.
   echo ERROR: Vite sigue sin estar instalado.
-  echo Ejecuta npm ci manualmente y revisa los mensajes de error.
+  echo Ejecuta npm install manualmente y revisa los mensajes de error.
   pause
   exit /b 1
 )
