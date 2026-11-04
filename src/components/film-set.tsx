@@ -700,6 +700,7 @@ export function FilmSet() {
           <p className="text-xs font-bold tracking-[0.16em] text-primary">MISIÓN · CAPÍTULO {hud.chapterIndex}/{hud.chapterCount} · TOMA {hud.take}</p>
           <p className="mt-1 font-display text-xl text-fg">{hud.chapterTitle}</p>
           <p className="mt-1 text-xs leading-5 text-muted">{hud.chapterBriefing}</p>
+          <p className="mt-1 text-[11px] leading-5 text-muted/80">{hud.storyPremise}</p>
           <p className="mt-1 text-xs font-semibold text-fg">{hud.objective}</p>
           <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-bold tracking-wider">
             <span className="rounded bg-bg px-2 py-1 text-primary">CALIDAD {hud.quality}/{hud.qualityTarget}</span>
