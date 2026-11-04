@@ -143,6 +143,24 @@ export const STATIONS: Record<
   },
 };
 
+/**
+ * Door / hallway entrance per map (normalized).
+ * Aligned to the stone arch on the set floor plan (bottom-right).
+ * Guion and montaje draw the same arch so walk-in/out matches.
+ */
+export const DOOR: Record<MapId, { x: number; y: number }> = {
+  set: { x: 0.88, y: 0.9 },
+  guion: { x: 0.88, y: 0.9 },
+  montaje: { x: 0.88, y: 0.9 },
+};
+
+/** Point just inside the room from the door (where characters land after entering). */
+export const DOOR_IN: Record<MapId, { x: number; y: number }> = {
+  set: { x: 0.78, y: 0.82 },
+  guion: { x: 0.78, y: 0.82 },
+  montaje: { x: 0.78, y: 0.82 },
+};
+
 export const BOUNDS = { minX: 0.08, maxX: 0.92, minY: 0.42, maxY: 0.96 };
 
 export const FLOOR: Array<[number, number]> = [
