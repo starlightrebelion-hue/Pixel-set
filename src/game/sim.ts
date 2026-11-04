@@ -647,6 +647,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       }
     }
     if (!best) return null;
+    const wasAway = best.state !== "work" || best.partner !== null || dist(best.x, best.y, best.homeX, best.homeY) > 0.07;
     if (pending && (pending.a === best.id || pending.b === best.id)) cancelChat();
     if (best.partner) {
       const partner = byId(best.partner);
@@ -659,7 +660,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       }
       best.partner = null;
     }
-    best.dragStartedAway = best.state !== "work" || best.partner !== null || dist(best.x, best.y, best.homeX, best.homeY) > 0.07;
+    best.dragStartedAway = wasAway;
     best.dragOffsetX = best.x - nx;
     best.dragOffsetY = best.y - ny;
     best.dragActivated = false;
