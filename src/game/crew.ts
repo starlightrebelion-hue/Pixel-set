@@ -8,7 +8,7 @@ export type CrewId =
   | "produccion"
   | "actores";
 
-export type Mood = "work" | "angry" | "sleep" | "talk";
+export type Mood = "work" | "angry" | "sleep" | "talk" | "coffee";
 
 export type CrewDef = {
   id: CrewId;
@@ -218,5 +218,6 @@ export function stateLabel(state: Mood, moving: boolean): string {
   if (state === "work") return "Trabaja";
   if (state === "angry") return "Enojado";
   if (state === "sleep") return "Duerme";
+  if (state === "coffee") return "Café";
   return "Habla";
 }
