@@ -482,6 +482,24 @@ export function createSim(onLog: (line: LogLine) => void) {
     else say(byId("director"), "Equipo alineado.", "dir");
   }
 
+  function storyDecision(message: string, qualityDelta = 0, tensionDelta = 0, moraleDelta = 0) {
+    if (transition) return;
+    quality = clamp(quality + qualityDelta, 0, 100);
+    stress = clamp(stress + tensionDelta - moraleDelta * 0.35, 0, 100);
+    const speaker = phase === "guion" ? byId("guion")
+      : phase === "editing" || phase === "cut" ? byId("montaje")
+      : byId("director");
+    say(speaker, message, "dir");
+    for (const p of people) {
+      if (!p.visible || p.id === speaker.id) continue;
+      if (p.state === "angry" && moraleDelta > 0) release(p);
+      if (moraleDelta < -5 && p.state === "work") {
+        p.state = "angry";
+        p.stateTimer = 2.5;
+      }
+    }
+  }
+
   function corten() {
     if (transition) return;
     if (phase === "rolling") { enterPhase(quality >= 45 ? "cut" : "prep"); return; }
@@ -593,7 +611,7 @@ export function createSim(onLog: (line: LogLine) => void) {
 
   return {
     people, particles, step, accion, coordinate, scold: scoldRandom, chaos, corten,
-    click, grab, drag, drop, cancelDrag, focus, goMap, hud,
+    click, grab, drag, drop, cancelDrag, focus, goMap, hud, storyDecision,
     get shake() { return shake; }, get map() { return map; }, get phase() { return phase; },
   };
 }
