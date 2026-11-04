@@ -366,6 +366,7 @@ export function createSim(onLog: (line: LogLine) => void) {
         return;
       }
       chapterIndex += 1;
+      sceneIndex = (sceneIndex + 1) % SCENES.length;
       resetChapterState();
       say(director, `Siguiente capítulo: ${currentChapter().title}. ${currentChapter().briefing}`, "dir");
     } else {
@@ -735,7 +736,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       p.x = p.homeX;
       p.y = p.homeY;
       if (wasAway) {
-        manualRescues = Math.min(RESCUE_GOAL, manualRescues + 1);
+        manualRescues = Math.min(currentChapter().rescueGoal, manualRescues + 1);
         quality = clamp(quality + 7, 0, 100);
         stress = clamp(stress - 4, 0, 100);
         say(p, "¡Bien! Recuperé mi puesto. A trabajar.", "ok");
