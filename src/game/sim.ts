@@ -786,7 +786,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       mood: moodText(),
       paused,
       timeLeft: Math.ceil(timeLeft),
-      objective: `${currentChapter().briefing} Calidad ${Math.round(quality)}/${currentChapter().qualityTarget} · Recuperaciones ${manualRescues}/${currentChapter().rescueGoal} · Estrés máximo ${currentChapter().stressLimit}%`,
+      objective: `Calidad ${Math.round(quality)}/${currentChapter().qualityTarget} · Recuperaciones ${manualRescues}/${currentChapter().rescueGoal} · Estrés máximo ${currentChapter().stressLimit}%`,
       stationCount: people.filter((p) => p.state === "work" && !p.partner && !p.dragging && dist(p.x, p.y, p.homeX, p.homeY) < 0.05).length,
       coffeeCount: people.filter((p) => p.state === "coffee" || p.state === "talk").length,
       manualRescues,
