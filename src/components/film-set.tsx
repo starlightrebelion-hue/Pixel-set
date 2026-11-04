@@ -326,9 +326,6 @@ export function FilmSet() {
           ctx.fillRect(x - size * 0.15, y - size * 0.22 + bob, size * 0.11, size * 0.2);
           ctx.fillRect(x + size * 0.04, y - size * 0.22 + bob, size * 0.11, size * 0.2);
         }
-        if (Math.hypot(p.x - p.homeX, p.y - p.homeY) < 0.075) {
-          drawWorkstationFront(ctx, x, y, size);
-        }
         if (p.state === "coffee" && !moving) {
           ctx.fillStyle = "#f0d7a2";
           ctx.fillRect(x + size * 0.18, y - size * 0.55, size * 0.07, size * 0.065);
@@ -345,6 +342,14 @@ export function FilmSet() {
           ctx.lineTo(x + 8, y - size + 12);
           ctx.stroke();
         }
+      }
+
+      for (const person of ordered) {
+        drawWorkstationFront(ctx, toX(person.homeX), toY(person.homeY), size);
+      }
+      for (const p of ordered) {
+        const x = toX(p.x);
+        const y = toY(p.y);
         ctx.font = "600 11px 'Source Sans 3', sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
