@@ -95,7 +95,7 @@ export const CREW: CrewDef[] = [
   },
 ];
 
-export const BOUNDS = { minX: 0.14, maxX: 0.84, minY: 0.58, maxY: 0.93 };
+export const BOUNDS = { minX: 0.08, maxX: 0.92, minY: 0.42, maxY: 0.96 };
 
 export const FLOOR: Array<[number, number]> = [
   [0.24, 0.7],
@@ -106,6 +106,14 @@ export const FLOOR: Array<[number, number]> = [
   [0.32, 0.88],
   [0.66, 0.88],
   [0.42, 0.84],
+  [0.16, 0.58],
+  [0.34, 0.5],
+  [0.52, 0.56],
+  [0.76, 0.48],
+  [0.88, 0.68],
+  [0.14, 0.84],
+  [0.84, 0.9],
+  [0.58, 0.94],
 ];
 
 export const COMPLAINTS: Record<Exclude<CrewId, "director">, string> = {

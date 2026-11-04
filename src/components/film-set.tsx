@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Clapperboard, Megaphone, Pause, TriangleAlert } from "lucide-react";
+import { Clapperboard, Megaphone, Pause, TriangleAlert, Users } from "lucide-react";
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
 import { CREW, stateLabel } from "@/game/crew";
 import { createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
@@ -352,6 +352,18 @@ export function FilmSet() {
         )}
       </div>
 
+      <section className="grid gap-3 rounded-md border border-primary/40 bg-surface p-3 sm:grid-cols-[1fr_auto]" aria-label="Objetivo de la partida">
+        <div>
+          <p className="text-xs font-bold tracking-[0.16em] text-primary">MISIÓN · TOMA {hud.take}</p>
+          <p className="mt-1 text-sm font-semibold text-fg">{hud.objective}</p>
+          <p className="mt-1 text-xs text-muted">Coordiná al equipo, resolvé los conflictos y conseguí una toma perfecta.</p>
+        </div>
+        <div className="min-w-24 self-center rounded-md bg-bg px-4 py-2 text-center">
+          <p className="text-[10px] font-bold tracking-widest text-muted">TIEMPO</p>
+          <p className={`font-display text-2xl tabular-nums ${hud.timeLeft <= 20 ? "text-danger" : "text-primary"}`}>{Math.floor(hud.timeLeft / 60)}:{String(hud.timeLeft % 60).padStart(2, "0")}</p>
+        </div>
+      </section>
+
       <section className="grid gap-3 sm:grid-cols-3" aria-label="Estado de la toma">
         <div className="rounded-md border border-border bg-surface px-3 py-2">
           <p className="text-xs text-muted">Toma {hud.take}</p>
@@ -377,7 +389,7 @@ export function FilmSet() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <button
           type="button"
           onClick={() => run((sim) => sim.accion())}
@@ -393,6 +405,10 @@ export function FilmSet() {
         <button type="button" onClick={() => run((sim) => sim.chaos())} className={btn}>
           <TriangleAlert className="size-4" aria-hidden="true" />
           Problema
+        </button>
+        <button type="button" onClick={() => run((sim) => sim.coordinate())} className={btn}>
+          <Users className="size-4" aria-hidden="true" />
+          Coordinar
         </button>
         <button type="button" onClick={() => run((sim) => sim.corten())} className={btn}>
           <Pause className="size-4" aria-hidden="true" />
@@ -414,7 +430,7 @@ export function FilmSet() {
           </p>
         ))}
       </div>
-      <p className="text-xs text-muted">Tocá a alguien en el set para escucharlo. Si se duermen, Rey los levanta.</p>
+      <p className="text-xs text-muted">Tocá a alguien para escuchar su tarea. Coordiná para recuperar al equipo; ¡Acción! pone la toma en marcha.</p>
     </main>
   );
 }
