@@ -1,3 +1,4 @@
+import { DEFAULT_STORY, type StoryDefinition, type StoryChapter } from "@/game/stories";
 import {
   ANGRY_REPLIES,
   BOUNDS,
@@ -86,6 +87,18 @@ export type Hud = {
   coffeeCount: number;
   manualRescues: number;
   rescueGoal: number;
+  storyTitle: string;
+  storyPremise: string;
+  chapterTitle: string;
+  chapterBriefing: string;
+  chapterIndex: number;
+  chapterCount: number;
+  qualityTarget: number;
+  stressLimit: number;
+  lives: number;
+  campaignComplete: boolean;
+  gameOver: boolean;
+  chapterFailed: boolean;
   people: HudPerson[];
 };
 
@@ -99,7 +112,6 @@ type Chat = {
 };
 
 export const COFFEE_SPOT: [number, number] = [0.86, 0.52];
-const RESCUE_GOAL = 3;
 const SPEED = 0.16;
 const BUBBLE_LIFE = 3.4;
 
@@ -131,6 +143,12 @@ export function createSim(onLog: (line: LogLine) => void) {
   let timeLeft = 90;
   let chatCooldown = 10.5;
   let manualRescues = 0;
+  let activeStory: StoryDefinition = DEFAULT_STORY;
+  let chapterIndex = 0;
+  let lives = 3;
+  let campaignComplete = false;
+  let gameOver = false;
+  let chapterFailed = false;
   let pending: Chat | null = null;
   const particles: Particle[] = [];
 
@@ -271,37 +289,105 @@ export function createSim(onLog: (line: LogLine) => void) {
     return true;
   }
 
+  function currentChapter(): StoryChapter {
+    return activeStory.chapters[chapterIndex] ?? activeStory.chapters[activeStory.chapters.length - 1] ?? DEFAULT_STORY.chapters[0]!;
+  }
+
+  function resetChapterState() {
+    const chapter = currentChapter();
+    paused = false;
+    timeLeft = chapter.timeLimit;
+    quality = 0;
+    stress = 12;
+    manualRescues = 0;
+    chapterFailed = false;
+    chatCooldown = 8;
+    cancelChat();
+    particles.length = 0;
+    for (const p of people) {
+      p.x = p.homeX;
+      p.y = p.homeY;
+      p.tx = p.homeX;
+      p.ty = p.homeY;
+      p.facing = 1;
+      p.state = "work";
+      p.stateTimer = 0;
+      p.decision = 8 + Math.random() * 5;
+      p.boredom = 0;
+      p.cooldown = 3;
+      p.napping = false;
+      p.partner = null;
+      p.bubble = null;
+      p.ring = 0;
+      p.dragging = false;
+      p.dragOffsetX = 0;
+      p.dragOffsetY = 0;
+      p.dragStartedAway = false;
+      p.dragActivated = false;
+    }
+  }
+
+  function startNewGame(story: StoryDefinition = DEFAULT_STORY) {
+    activeStory = story.chapters?.length ? story : DEFAULT_STORY;
+    chapterIndex = 0;
+    take = 1;
+    sceneIndex = 0;
+    lives = 3;
+    campaignComplete = false;
+    gameOver = false;
+    chapterFailed = false;
+    resetChapterState();
+    say(byId("director"), `Comienza "${activeStory.title}". ${currentChapter().briefing}`, "dir");
+    say(byId("produccion"), "Tenemos tres intentos para terminar esta historia. ¡A trabajar!", "ok");
+  }
+
+  function retryChapter() {
+    if (campaignComplete || lives <= 0) return;
+    resetChapterState();
+    say(byId("director"), `Repetimos: ${currentChapter().title}. Esta vez lo sacamos.`, "dir");
+  }
+
   function finishTake(ok: boolean) {
     const director = byId("director");
     const producer = byId("produccion");
-    manualRescues = 0;
+    const chapter = currentChapter();
     if (ok) {
-      say(director, "¡Corte! Esa queda. Impriman.", "dir");
-      say(producer, `Toma ${take} enlatada. Pasamos a la siguiente.`, "ok");
+      say(director, "¡Corte! Objetivo cumplido. Impriman.", "dir");
+      say(producer, `Capítulo ${chapterIndex + 1} terminado: ${chapter.title}.`, "ok");
       burst("confetti", 0.5, 0.7, 18);
       take += 1;
-      timeLeft = 90;
-      sceneIndex = (sceneIndex + 1) % SCENES.length;
-      quality = 0;
-      stress = clamp(stress - 28, 0, 100);
+      stress = clamp(stress - 18, 0, 100);
       shake = Math.max(shake, 0.6);
+      chapterFailed = false;
+      if (chapterIndex + 1 >= activeStory.chapters.length) {
+        campaignComplete = true;
+        paused = true;
+        say(director, `¡Fin de "${activeStory.title}"! El equipo terminó la película.`, "dir");
+        return;
+      }
+      chapterIndex += 1;
+      resetChapterState();
+      say(director, `Siguiente capítulo: ${currentChapter().title}. ${currentChapter().briefing}`, "dir");
     } else {
-      say(director, "¡Corten! Esta toma no sirve. Otra vez, desde el principio.", "dir");
-      quality = clamp(quality - 35, 0, 100);
-      stress = 38;
-      timeLeft = 90;
+      lives = Math.max(0, lives - 1);
+      chapterFailed = true;
+      paused = true;
       shake = 1.2;
-      for (const p of people) {
-        if (p.id === "director") continue;
-        p.state = "angry";
-        p.stateTimer = 1.8;
-        p.napping = false;
-        p.boredom = 0;
+      if (lives <= 0) {
+        gameOver = true;
+        say(director, "Se terminó la jornada. Nos quedamos sin intentos.", "angry");
+        say(producer, "La película no llegó a completarse. Podés empezar otra historia.", "angry");
+      } else {
+        say(director, "¡Corten! No llegamos al objetivo. Revisá el equipo y reintentá el capítulo.", "dir");
+        say(producer, `Quedan ${lives} intentos. No perdamos la película.`, "angry");
       }
     }
   }
 
   function moodText() {
+    if (campaignComplete) return "¡Historia terminada!";
+    if (gameOver) return "Fin de la jornada. Podés comenzar otra historia.";
+    if (chapterFailed) return "Objetivo fallido. Reintentá el capítulo.";
     if (paused) return "Pausa. El set respira.";
     if (stress > 78) return "El set está al límite.";
     if (people.some((p) => p.state === "sleep")) return "Alguien se está durmiendo en el set.";
@@ -458,7 +544,9 @@ export function createSim(onLog: (line: LogLine) => void) {
       }
       quality = clamp(quality + (working * 0.18 - sleeping * 1.3 - angry * 0.55) * dt, 0, 100);
       stress = clamp(stress + (sleeping * 0.85 + angry * 0.35 - (sleeping + angry === 0 ? 0.22 : 0)) * dt, 0, 100);
-      if (quality >= 100) finishTake(true);
+      const chapter = currentChapter();
+      const objectivesMet = quality >= chapter.qualityTarget && manualRescues >= chapter.rescueGoal && stress <= chapter.stressLimit;
+      if (objectivesMet) finishTake(true);
       else if (stress >= 100 || timeLeft <= 0) finishTake(false);
     }
 
@@ -651,10 +739,10 @@ export function createSim(onLog: (line: LogLine) => void) {
         quality = clamp(quality + 7, 0, 100);
         stress = clamp(stress - 4, 0, 100);
         say(p, "¡Bien! Recuperé mi puesto. A trabajar.", "ok");
-        if (manualRescues === RESCUE_GOAL) {
+        if (manualRescues === currentChapter().rescueGoal) {
           quality = clamp(quality + 10, 0, 100);
           stress = clamp(stress - 8, 0, 100);
-          say(byId("director"), "¡Equipo completo! Bonus de producción.", "dir");
+          say(byId("director"), "¡Objetivo de equipo cumplido! Bonus de producción.", "dir");
         }
       } else {
         say(p, "Estoy en mi estación. ¿Qué sigue?", "ok");
@@ -697,11 +785,23 @@ export function createSim(onLog: (line: LogLine) => void) {
       mood: moodText(),
       paused,
       timeLeft: Math.ceil(timeLeft),
-      objective: manualRescues < RESCUE_GOAL ? `Recuperá ${RESCUE_GOAL - manualRescues} integrantes: arrastralos hasta su escritorio` : quality >= 65 ? "Sostené el ritmo: estás cerca de cerrar la toma" : "Llevá la calidad al 100% antes de que se agote el tiempo",
+      objective: `${currentChapter().briefing} Calidad ${Math.round(quality)}/${currentChapter().qualityTarget} · Recuperaciones ${manualRescues}/${currentChapter().rescueGoal} · Estrés máximo ${currentChapter().stressLimit}%`,
       stationCount: people.filter((p) => p.state === "work" && !p.partner && !p.dragging && dist(p.x, p.y, p.homeX, p.homeY) < 0.05).length,
       coffeeCount: people.filter((p) => p.state === "coffee" || p.state === "talk").length,
       manualRescues,
-      rescueGoal: RESCUE_GOAL,
+      rescueGoal: currentChapter().rescueGoal,
+      storyTitle: activeStory.title,
+      storyPremise: activeStory.premise,
+      chapterTitle: currentChapter().title,
+      chapterBriefing: currentChapter().briefing,
+      chapterIndex: chapterIndex + 1,
+      chapterCount: activeStory.chapters.length,
+      qualityTarget: currentChapter().qualityTarget,
+      stressLimit: currentChapter().stressLimit,
+      lives,
+      campaignComplete,
+      gameOver,
+      chapterFailed,
       people: people.map((p) => ({
         id: p.id,
         name: p.name,
@@ -712,7 +812,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     };
   }
 
-  return { people, particles, step, accion, coordinate, scold: scoldRandom, chaos, corten, click, grab, drag, drop, cancelDrag, focus, hud, get shake() { return shake; } };
+  return { people, particles, step, startNewGame, retryChapter, accion, coordinate, scold: scoldRandom, chaos, corten, click, grab, drag, drop, cancelDrag, focus, hud, get shake() { return shake; } };
 }
 
 export type Sim = ReturnType<typeof createSim>;
