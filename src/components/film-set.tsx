@@ -667,7 +667,7 @@ export function FilmSet() {
         <div>
           <p className="text-xs font-semibold tracking-[0.22em] text-primary">SET DE RODAJE</p>
           <h1 className="font-display text-3xl leading-none text-fg">Pixel Set</h1>
-          <p className="mt-1 text-sm text-muted">Asigná puestos, interrumpí pausas y mantené vivo el rodaje.</p>
+          <p className="mt-1 text-sm text-muted">{hud.storyTitle} · {hud.chapterTitle}</p>
         </div>
         <div className="flex items-center gap-3"><p className="max-w-xs text-sm text-fg">{hud.mood}</p><button type="button" onClick={openMenu} className="rounded border border-border px-3 py-2 text-[10px] font-bold tracking-widest text-muted hover:border-primary hover:text-fg">MENÚ</button></div>
       </header>
