@@ -3,6 +3,7 @@ import { Clapperboard, Film, Library, Megaphone, Pause, TriangleAlert, Users } f
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
 import { CREW, stateLabel, type CrewId, type MapId } from "@/game/crew";
 import { COFFEE_SPOT, createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
+import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
 
 const POSES = ["pose-1", "pose-2", "pose-3", "pose-4"] as const;
 const SPRITE_ASSETS = import.meta.glob<string>("../../assets/sprites/*/pose-*.png", {
@@ -132,13 +133,32 @@ export function FilmSet() {
       const sy = shake ? (Math.random() - 0.5) * shake * 6 : 0;
       ctx.save(); ctx.translate(sx, sy);
       const mapId = (sim.map as MapId) || "set";
-      const stage = maps.get(mapId) || maps.get("set");
-      if (stage && stage.naturalWidth) {
+      const stage = maps.get(mapId);
+      const setStage = maps.get("set");
+      if (mapId === "set" && stage && stage.naturalWidth) {
         const scale = Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);
         layout.dw = stage.naturalWidth * scale; layout.dh = stage.naturalHeight * scale;
         layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
         ctx.drawImage(stage, layout.ox, layout.oy, layout.dw, layout.dh);
-      } else { layout.ox = 0; layout.oy = 0; layout.dw = cw; layout.dh = ch; }
+      } else if (mapId === "guion" || mapId === "montaje") {
+        if (stage && stage.naturalWidth) {
+          const scale = Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);
+          layout.dw = stage.naturalWidth * scale; layout.dh = stage.naturalHeight * scale;
+          layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
+          ctx.drawImage(stage, layout.ox, layout.oy, layout.dw, layout.dh);
+        } else {
+          layout.ox = 0; layout.oy = 0; layout.dw = cw; layout.dh = ch;
+          if (mapId === "guion") drawGuionRoom(ctx, layout.ox, layout.oy, layout.dw, layout.dh);
+          else drawMontajeRoom(ctx, layout.ox, layout.oy, layout.dw, layout.dh);
+        }
+      } else if (setStage && setStage.naturalWidth) {
+        const scale = Math.min(cw / setStage.naturalWidth, ch / setStage.naturalHeight);
+        layout.dw = setStage.naturalWidth * scale; layout.dh = setStage.naturalHeight * scale;
+        layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
+        ctx.drawImage(setStage, layout.ox, layout.oy, layout.dw, layout.dh);
+      } else {
+        layout.ox = 0; layout.oy = 0; layout.dw = cw; layout.dh = ch;
+      }
       const toX = (nx: number) => layout.ox + nx * layout.dw;
       const toY = (ny: number) => layout.oy + ny * layout.dh;
       const size = layout.dh * 0.23;
