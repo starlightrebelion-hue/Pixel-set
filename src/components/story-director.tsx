@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   chooseStoryOption, createStoryState, currentStoryBeat, isStoryState,
-  storyBeatCount, storyProgress, type StoryState, type StoryStat,
+  storyBeatCount, storyProgress, type StoryChoice, type StoryState, type StoryStat,
 } from "@/game/story-engine";
 
 const STORAGE_KEY = "pixel-set-story-v1";
@@ -21,7 +21,7 @@ function loadStory(): StoryState {
   }
 }
 
-export function StoryDirector() {
+export function StoryDirector({ onDecision }: { onDecision?: (choice: StoryChoice) => void }) {
   const [story, setStory] = useState<StoryState>(loadStory);
   const [title, setTitle] = useState(story.projectTitle);
 
@@ -72,7 +72,7 @@ export function StoryDirector() {
           <h4 className="mt-4 text-xs font-bold tracking-widest text-muted">TU DECISIÓN</h4>
           <div className="mt-2 grid gap-2 md:grid-cols-3">
             {beat.choices.map((choice) => (
-              <button key={choice.id} type="button" onClick={() => setStory((current) => chooseStoryOption(current, choice.id))} className="rounded-md border border-border bg-surface p-3 text-left transition-colors hover:border-primary">
+              <button key={choice.id} type="button" onClick={() => { onDecision?.(choice); setStory((current) => chooseStoryOption(current, choice.id)); }} className="rounded-md border border-border bg-surface p-3 text-left transition-colors hover:border-primary">
                 <span className="block text-sm font-bold text-fg">{choice.label}</span>
                 <span className="mt-1 block text-xs text-muted">{choice.description}</span>
                 <span className="mt-2 block text-xs text-primary">Elegir esta opción →</span>
