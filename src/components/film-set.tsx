@@ -6,6 +6,14 @@ import { createSim, type Hud, type LogLine, type Person, type Sim } from "@/game
 
 const POSES = ["pose-1", "pose-2", "pose-3", "pose-4"] as const;
 
+// Import sprite PNGs from the source asset folder so every crew role is bundled.
+// The old /public/sprites path only contained director, camera and actors.
+const SPRITE_ASSETS = import.meta.glob<string>("../../assets/sprites/*/pose-*.png", {
+  eager: true,
+  query: "?url",
+  import: "default",
+});
+
 const INITIAL_LOG: LogLine[] = [
   {
     id: -3,
@@ -144,7 +152,14 @@ export function FilmSet() {
           mark();
         };
         img.onerror = () => mark();
-        img.src = assetUrl(`/sprites/${crew.id}/${pose}.png`);
+        const spritePath = `../../assets/sprites/${crew.id}/${pose}.png`;
+        const spriteSrc = SPRITE_ASSETS[spritePath];
+        if (!spriteSrc) {
+          console.warn(`[Pixel Set] Falta el sprite: ${spritePath}`);
+          mark();
+          continue;
+        }
+        img.src = spriteSrc;
       }
     }
 
@@ -219,6 +234,16 @@ export function FilmSet() {
           ctx.scale(p.facing, 1);
           ctx.drawImage(frame, -size / 2, -size, size, size);
           ctx.restore();
+        } else {
+          // Visible fallback: a missing image must never make a crew member disappear.
+          ctx.fillStyle = "#d8c5a4";
+          ctx.beginPath();
+          ctx.arc(x, y - size * 0.82 + bob, size * 0.12, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillRect(x - size * 0.12, y - size * 0.68 + bob, size * 0.24, size * 0.48);
+          ctx.fillStyle = "#4b4034";
+          ctx.fillRect(x - size * 0.15, y - size * 0.22 + bob, size * 0.11, size * 0.2);
+          ctx.fillRect(x + size * 0.04, y - size * 0.22 + bob, size * 0.11, size * 0.2);
         }
         if (p.state === "angry") {
           ctx.strokeStyle = "#d4533c";

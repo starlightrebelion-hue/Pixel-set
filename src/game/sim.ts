@@ -297,6 +297,8 @@ export function createSim(onLog: (line: LogLine) => void) {
   }
 
   function step(dt: number) {
+    // A real cut/pause freezes timers, crew decisions, movement and particles.
+    if (paused) return;
     time += dt;
     shake = Math.max(0, shake - dt * 1.4);
     chatCooldown -= dt;
