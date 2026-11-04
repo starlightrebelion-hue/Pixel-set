@@ -7,7 +7,9 @@ const emptyProject: StoryProject = {
   visualApproach: "", scenes: [],
 };
 
-const fields: Array<{ key: keyof StoryProject; label: string; placeholder: string }> = [
+type TextField = "title" | "premise" | "genre" | "tone" | "audience" | "protagonist" | "protagonistGoal" | "obstacle" | "stakes" | "ending" | "visualApproach";
+
+const fields: Array<{ key: TextField; label: string; placeholder: string }> = [
   { key: "title", label: "Título", placeholder: "Nombre provisional del proyecto" },
   { key: "premise", label: "Premisa", placeholder: "¿De qué trata la historia en una o dos frases?" },
   { key: "genre", label: "Género", placeholder: "Drama, comedia, thriller…" },
@@ -29,7 +31,7 @@ export function AdvisorPanel() {
   const [sceneText, setSceneText] = useState("");
   const [assessment, setAssessment] = useState<ProjectAssessment | null>(null);
 
-  const update = (key: keyof StoryProject, value: string) => {
+  const update = (key: TextField, value: string) => {
     setProject((current) => ({ ...current, [key]: value }));
   };
 
