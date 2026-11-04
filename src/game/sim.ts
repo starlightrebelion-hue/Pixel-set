@@ -5,7 +5,6 @@ import {
   COMPLAINTS,
   CREW,
   FIXED_REPLIES,
-  FLOOR,
   ISSUES,
   SCENES,
   type CrewId,
@@ -41,6 +40,7 @@ export type Person = {
   partner: CrewId | null;
   bubble: Bubble | null;
   ring: number;
+  dragging: boolean;
 };
 
 export type Particle = {
@@ -78,6 +78,10 @@ export type Hud = {
   paused: boolean;
   timeLeft: number;
   objective: string;
+  stationCount: number;
+  coffeeCount: number;
+  manualRescues: number;
+  rescueGoal: number;
   people: HudPerson[];
 };
 
@@ -90,6 +94,8 @@ type Chat = {
   age: number;
 };
 
+export const COFFEE_SPOT: [number, number] = [0.86, 0.52];
+const RESCUE_GOAL = 3;
 const SPEED = 0.16;
 const BUBBLE_LIFE = 3.4;
 
@@ -119,7 +125,8 @@ export function createSim(onLog: (line: LogLine) => void) {
   let shake = 0;
   let time = 0;
   let timeLeft = 90;
-  let chatCooldown = 2.2;
+  let chatCooldown = 10.5;
+  let manualRescues = 0;
   let pending: Chat | null = null;
   const particles: Particle[] = [];
 
@@ -137,13 +144,14 @@ export function createSim(onLog: (line: LogLine) => void) {
     facing: 1,
     state: "work" as Mood,
     stateTimer: 0,
-    decision: 1 + Math.random() * 2,
-    boredom: Math.random() * 3,
+    decision: 10 + Math.random() * 6,
+    boredom: 0,
     cooldown: 4,
     napping: false,
     partner: null,
     bubble: null,
     ring: 0,
+    dragging: false,
   }));
 
   const byId = (id: CrewId) => people.find((p) => p.id === id)!;
@@ -189,9 +197,10 @@ export function createSim(onLog: (line: LogLine) => void) {
     p.state = "work";
     p.partner = null;
     p.napping = false;
+    p.dragging = false;
     p.tx = p.homeX;
     p.ty = p.homeY;
-    p.decision = 1.5 + Math.random() * 2;
+    p.decision = 9 + Math.random() * 6;
   }
 
   function scold(target: Person, reason: "sleep" | "work") {
@@ -221,12 +230,12 @@ export function createSim(onLog: (line: LogLine) => void) {
   }
 
   function tryChat(): boolean {
-    const pool = people.filter((p) => p.state === "work" && !p.partner);
+    const pool = people.filter((p) => p.state === "work" && !p.partner && !p.dragging && p.boredom > 6 && dist(p.x, p.y, p.homeX, p.homeY) < 0.06);
     if (pool.length < 2) return false;
     const options = CHATS.filter((c) => {
       const a = byId(c.a);
       const b = byId(c.b);
-      return a.state === "work" && b.state === "work" && !a.partner && !b.partner;
+      return a.state === "work" && b.state === "work" && !a.partner && !b.partner && !a.dragging && !b.dragging && a.boredom > 6 && b.boredom > 6 && dist(a.x, a.y, a.homeX, a.homeY) < 0.06 && dist(b.x, b.y, b.homeX, b.homeY) < 0.06;
     });
     if (!options.length) return false;
     const chat = pick(options);
@@ -244,23 +253,10 @@ export function createSim(onLog: (line: LogLine) => void) {
     return true;
   }
 
-  function wander(p: Person) {
-    if (p.partner) return;
-    if (Math.random() < 0.55) {
-      const [x, y] = clampPoint(p.homeX + (Math.random() - 0.5) * 0.08, p.homeY + (Math.random() - 0.5) * 0.06);
-      p.tx = x;
-      p.ty = y;
-    } else {
-      const [x, y] = pick(FLOOR);
-      p.tx = x;
-      p.ty = y;
-    }
-    p.decision = 2.4 + Math.random() * 3.2;
-  }
-
   function finishTake(ok: boolean) {
     const director = byId("director");
     const producer = byId("produccion");
+    manualRescues = 0;
     if (ok) {
       say(director, "¡Corte! Esa queda. Impriman.", "dir");
       say(producer, `Toma ${take} enlatada. Pasamos a la siguiente.`, "ok");
@@ -292,6 +288,8 @@ export function createSim(onLog: (line: LogLine) => void) {
     if (stress > 78) return "El set está al límite.";
     if (people.some((p) => p.state === "sleep")) return "Alguien se está durmiendo en el set.";
     if (people.some((p) => p.state === "angry")) return "Tensión entre departamentos.";
+    if (people.some((p) => p.state === "coffee")) return "Hay una pausa de café. Recuperá el ritmo del set.";
+    if (people.some((p) => p.state === "talk")) return "Hay una charla entre departamentos. Reorganizá al equipo.";
     if (quality > 82) return "Esta toma está por cerrar.";
     return "Rodando. Los departamentos trabajan.";
   }
@@ -311,7 +309,17 @@ export function createSim(onLog: (line: LogLine) => void) {
       p.ring = Math.max(0, p.ring - dt);
       p.cooldown = Math.max(0, p.cooldown - dt);
 
-      if (p.state === "angry" || p.state === "talk" || p.state === "sleep") {
+      if (p.state === "coffee") {
+        // Coffee time starts only after the person reaches the coffee corner.
+        if (dist(p.x, p.y, p.tx, p.ty) < 0.035) {
+          p.stateTimer -= dt;
+          if (p.stateTimer <= 0) {
+            say(p, "Listo, café terminado. Vuelvo a mi puesto.", "ok");
+            release(p);
+            p.cooldown = 3.5;
+          }
+        }
+      } else if (p.state === "angry" || p.state === "talk" || p.state === "sleep") {
         p.stateTimer -= dt;
         if (p.stateTimer <= 0) {
           if (p.state === "angry" && p.id !== "director") {
@@ -324,35 +332,29 @@ export function createSim(onLog: (line: LogLine) => void) {
           }
           release(p);
         }
-      } else if (!paused && p.state === "work") {
+      } else if (!paused && p.state === "work" && !p.dragging) {
         p.decision -= dt;
-        const atHome = dist(p.x, p.y, p.homeX, p.homeY) < 0.05;
-        if (atHome && p.id !== "director") p.boredom += dt;
-        else p.boredom = Math.max(0, p.boredom - dt * 0.5);
-        if (
-          p.id !== "director" &&
-          atHome &&
-          p.cooldown <= 0 &&
-          !p.partner &&
-          p.boredom > 9 &&
-          Math.random() < dt * 0.35
-        ) {
-          p.state = "sleep";
-          p.stateTimer = 7 + Math.random() * 4;
-          p.napping = true;
+        const atStation = dist(p.x, p.y, p.homeX, p.homeY) < 0.05;
+        if (atStation) p.boredom += dt;
+        else p.boredom = Math.max(0, p.boredom - dt * 0.8);
+
+        if (p.id !== "director" && atStation && p.cooldown <= 0 && !p.partner && p.decision <= 0) {
+          p.state = "coffee";
+          p.stateTimer = 5.5 + Math.random() * 3;
+          p.napping = false;
           p.boredom = 0;
-          p.tx = p.x;
-          p.ty = p.y;
-        } else if (p.decision <= 0 && !p.partner) {
-          wander(p);
+          p.tx = clamp(COFFEE_SPOT[0] + (Math.random() - 0.5) * 0.035, BOUNDS.minX, BOUNDS.maxX);
+          p.ty = clamp(COFFEE_SPOT[1] + (Math.random() - 0.5) * 0.025, BOUNDS.minY, BOUNDS.maxY);
+          p.decision = 9 + Math.random() * 6;
+          say(p, pick(["Me voy por un café. Enseguida vuelvo.", "Necesito despejarme un minuto.", "Una pausa y sigo con la toma."]), "ok");
         }
       }
 
       if (p.state === "sleep" && Math.random() < dt * 1.6) burst("z", p.x, p.y - 0.1, 1);
       if (p.state === "angry" && Math.random() < dt * 2.2) burst("steam", p.x, p.y - 0.12, 1);
 
-      const canMove = p.state === "work" || (p.state === "talk" && false);
-      if (canMove || (p.id === "director" && p.state === "work")) {
+      const canMove = p.state === "work" || p.state === "coffee";
+      if (canMove && !p.dragging) {
         const dx = p.tx - p.x;
         const dy = p.ty - p.y;
         const d = Math.hypot(dx, dy);
@@ -421,7 +423,7 @@ export function createSim(onLog: (line: LogLine) => void) {
           say(a, pending.line, a.id === "director" ? "dir" : "ok");
           say(b, pending.reply, b.id === "director" ? "dir" : "ok");
           pending = null;
-          chatCooldown = 5.5;
+          chatCooldown = 11 + Math.random() * 4;
         }
       } else if (chatCooldown <= 0) {
         if (!tryChat()) chatCooldown = 1.6;
@@ -433,7 +435,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       for (const p of people) {
         if (p.state === "sleep") sleeping += 1;
         else if (p.state === "angry") angry += 1;
-        else if (p.state === "work" || p.state === "talk") working += 1;
+        else if (p.state === "work" && !p.dragging && !p.partner && dist(p.x, p.y, p.homeX, p.homeY) < 0.05) working += 1;
       }
       quality = clamp(quality + (working * 0.18 - sleeping * 1.3 - angry * 0.55) * dt, 0, 100);
       stress = clamp(stress + (sleeping * 0.85 + angry * 0.35 - (sleeping + angry === 0 ? 0.22 : 0)) * dt, 0, 100);
@@ -454,15 +456,15 @@ export function createSim(onLog: (line: LogLine) => void) {
   function accion() {
     paused = false;
     stress = clamp(stress - 10, 0, 100);
+    cancelChat();
     const director = byId("director");
     say(director, "¡Acción! Todos a sus puestos.", "dir");
     for (const p of people) {
       p.boredom = 0;
       p.cooldown = Math.max(p.cooldown, 6);
-      if (p.state === "sleep") {
-        p.napping = false;
+      if (p.state !== "work" || dist(p.x, p.y, p.homeX, p.homeY) > 0.05) {
         release(p);
-        say(p, "¡Estoy!", "ok");
+        say(p, "¡Voy a mi estación!", "ok");
       }
     }
   }
@@ -496,7 +498,7 @@ export function createSim(onLog: (line: LogLine) => void) {
   function coordinate() {
     paused = false;
     stress = clamp(stress - 14, 0, 100);
-    const target = people.find((p) => p.state === "sleep" || p.state === "angry");
+    const target = people.find((p) => p.id !== "director" && (p.state === "sleep" || p.state === "angry" || p.state === "coffee" || p.state === "talk" || dist(p.x, p.y, p.homeX, p.homeY) > 0.08));
     if (target) {
       if (pending && (pending.a === target.id || pending.b === target.id)) cancelChat();
       release(target);
@@ -517,13 +519,105 @@ export function createSim(onLog: (line: LogLine) => void) {
       p.boredom = 0;
       p.napping = false;
       p.partner = null;
-      if (p.state === "sleep" || p.state === "angry" || p.state === "talk") release(p);
+      if (p.state === "sleep" || p.state === "angry" || p.state === "talk" || p.state === "coffee") release(p);
       else {
         p.tx = p.homeX;
         p.ty = p.homeY;
       }
     }
     say(byId("director"), "¡Corten! Pausa de cinco minutos. Respiramos y volvemos.", "dir");
+  }
+
+  function grab(nx: number, ny: number): CrewId | null {
+    let best: Person | null = null;
+    let bestD = 0.085;
+    for (const p of people) {
+      const d = dist(nx, ny, p.x, p.y - 0.06);
+      if (d < bestD) {
+        best = p;
+        bestD = d;
+      }
+    }
+    if (!best) return null;
+    if (pending && (pending.a === best.id || pending.b === best.id)) cancelChat();
+    if (best.partner) {
+      const partner = byId(best.partner);
+      if (partner.partner === best.id) {
+        partner.partner = null;
+        if (partner.state === "work") {
+          partner.tx = partner.homeX;
+          partner.ty = partner.homeY;
+        }
+      }
+      best.partner = null;
+    }
+    best.dragging = true;
+    best.ring = 2.2;
+    return best.id;
+  }
+
+  function drag(id: CrewId, nx: number, ny: number) {
+    const p = byId(id);
+    if (!p.dragging) return;
+    const [x, y] = clampPoint(nx, ny);
+    if (x < p.x - 0.002) p.facing = -1;
+    else if (x > p.x + 0.002) p.facing = 1;
+    p.x = x;
+    p.y = y;
+    p.tx = x;
+    p.ty = y;
+  }
+
+  function cancelDrag(id: CrewId) {
+    byId(id).dragging = false;
+  }
+
+  function drop(id: CrewId, nx: number, ny: number) {
+    const p = byId(id);
+    if (!p.dragging) return;
+    drag(id, nx, ny);
+    p.dragging = false;
+    const wasAway = p.state !== "work" || p.partner !== null || dist(p.x, p.y, p.homeX, p.homeY) > 0.07;
+    if (pending && (pending.a === id || pending.b === id)) cancelChat();
+    if (p.partner) {
+      const partner = byId(p.partner);
+      if (partner.partner === id) {
+        partner.partner = null;
+        if (partner.state === "work") {
+          partner.tx = partner.homeX;
+          partner.ty = partner.homeY;
+        }
+      }
+    }
+    p.partner = null;
+    p.state = "work";
+    p.stateTimer = 0;
+    p.napping = false;
+    p.boredom = 0;
+    p.cooldown = Math.max(p.cooldown, 8);
+    p.tx = p.homeX;
+    p.ty = p.homeY;
+
+    const atStation = dist(p.x, p.y, p.homeX, p.homeY) <= 0.12;
+    if (atStation) {
+      p.x = p.homeX;
+      p.y = p.homeY;
+      if (wasAway) {
+        manualRescues = Math.min(RESCUE_GOAL, manualRescues + 1);
+        quality = clamp(quality + 7, 0, 100);
+        stress = clamp(stress - 4, 0, 100);
+        say(p, "¡Bien! Recuperé mi puesto. A trabajar.", "ok");
+        if (manualRescues === RESCUE_GOAL) {
+          quality = clamp(quality + 10, 0, 100);
+          stress = clamp(stress - 8, 0, 100);
+          say(byId("director"), "¡Equipo completo! Bonus de producción.", "dir");
+        }
+      } else {
+        say(p, "Estoy en mi estación. ¿Qué sigue?", "ok");
+      }
+    } else {
+      say(p, "¡Vuelvo a mi estación! El escritorio está marcado.", "ok");
+    }
   }
 
   function focus(id: CrewId) {
@@ -558,7 +652,11 @@ export function createSim(onLog: (line: LogLine) => void) {
       mood: moodText(),
       paused,
       timeLeft: Math.ceil(timeLeft),
-      objective: quality >= 65 ? "Sostené el ritmo: estás cerca de cerrar la toma" : "Llevá la calidad al 100% antes de que se agote el tiempo",
+      objective: manualRescues < RESCUE_GOAL ? `Recuperá ${RESCUE_GOAL - manualRescues} integrantes: arrastralos hasta su escritorio` : quality >= 65 ? "Sostené el ritmo: estás cerca de cerrar la toma" : "Llevá la calidad al 100% antes de que se agote el tiempo",
+      stationCount: people.filter((p) => p.state === "work" && !p.partner && !p.dragging && dist(p.x, p.y, p.homeX, p.homeY) < 0.05).length,
+      coffeeCount: people.filter((p) => p.state === "coffee" || p.state === "talk").length,
+      manualRescues,
+      rescueGoal: RESCUE_GOAL,
       people: people.map((p) => ({
         id: p.id,
         name: p.name,
@@ -569,7 +667,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     };
   }
 
-  return { people, particles, step, accion, coordinate, scold: scoldRandom, chaos, corten, click, focus, hud, get shake() { return shake; } };
+  return { people, particles, step, accion, coordinate, scold: scoldRandom, chaos, corten, click, grab, drag, drop, cancelDrag, focus, hud, get shake() { return shake; } };
 }
 
 export type Sim = ReturnType<typeof createSim>;
