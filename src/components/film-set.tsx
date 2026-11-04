@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Clapperboard, Megaphone, Pause, TriangleAlert, Users } from "lucide-react";
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
-import { CREW, stateLabel } from "@/game/crew";
-import { createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
+import { CREW, stateLabel, type CrewId } from "@/game/crew";
+import { COFFEE_SPOT, createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
 
 const POSES = ["pose-1", "pose-2", "pose-3", "pose-4"] as const;
 
@@ -42,6 +42,12 @@ const INITIAL_HUD: Hud = {
   quality: 8,
   mood: "Rodando. Los departamentos trabajan.",
   paused: false,
+  timeLeft: 90,
+  objective: "Recuperá 3 integrantes: arrastralos hasta su escritorio",
+  stationCount: CREW.length,
+  coffeeCount: 0,
+  manualRescues: 0,
+  rescueGoal: 3,
   people: CREW.map((c) => ({
     id: c.id,
     name: c.name,
@@ -80,6 +86,51 @@ function poseFor(p: Person, moving: boolean, t: number) {
   const step = Math.floor(t * (moving ? 8 : 2) + p.homeX * 10) % 2;
   if (moving) return step === 0 ? "pose-2" : "pose-1";
   return step === 0 ? "pose-1" : "pose-2";
+}
+
+function drawWorkstationBack(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  // Chair and monitor sit behind the crew sprite.
+  ctx.fillStyle = "#29231f";
+  ctx.fillRect(x - size * 0.16, y - size * 0.31, size * 0.32, size * 0.18);
+  ctx.fillStyle = "#51402f";
+  ctx.fillRect(x - size * 0.29, y - size * 0.43, size * 0.58, size * 0.07);
+  ctx.fillStyle = "#161d20";
+  ctx.fillRect(x - size * 0.12, y - size * 0.62, size * 0.24, size * 0.18);
+  ctx.fillStyle = "#76a8a2";
+  ctx.fillRect(x - size * 0.095, y - size * 0.595, size * 0.19, size * 0.125);
+  ctx.fillStyle = "#c39a61";
+  ctx.fillRect(x - size * 0.025, y - size * 0.42, size * 0.05, size * 0.04);
+}
+
+function drawWorkstationFront(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  // The desktop overlaps the character's waist to create a seated-at-work effect.
+  ctx.fillStyle = "#533a2b";
+  ctx.fillRect(x - size * 0.32, y - size * 0.39, size * 0.64, size * 0.12);
+  ctx.fillStyle = "#a27a50";
+  ctx.fillRect(x - size * 0.32, y - size * 0.405, size * 0.64, size * 0.035);
+  ctx.fillStyle = "#38291f";
+  ctx.fillRect(x - size * 0.27, y - size * 0.29, size * 0.045, size * 0.20);
+  ctx.fillRect(x + size * 0.225, y - size * 0.29, size * 0.045, size * 0.20);
+  ctx.fillStyle = "#d1b27d";
+  ctx.fillRect(x + size * 0.18, y - size * 0.455, size * 0.045, size * 0.045);
+}
+
+function drawCoffeeCorner(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  ctx.fillStyle = "#302720";
+  ctx.fillRect(x - size * 0.22, y - size * 0.25, size * 0.44, size * 0.22);
+  ctx.fillStyle = "#9a704b";
+  ctx.fillRect(x - size * 0.24, y - size * 0.27, size * 0.48, size * 0.045);
+  ctx.fillStyle = "#1c2425";
+  ctx.fillRect(x - size * 0.105, y - size * 0.43, size * 0.21, size * 0.18);
+  ctx.fillStyle = "#bc9a6a";
+  ctx.fillRect(x - size * 0.065, y - size * 0.39, size * 0.13, size * 0.045);
+  ctx.fillStyle = "#f0d7a2";
+  ctx.fillRect(x + size * 0.11, y - size * 0.34, size * 0.07, size * 0.06);
+  ctx.fillStyle = "#f4ecdf";
+  ctx.font = "700 10px 'Source Sans 3', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillText("CAFÉ", x, y - size * 0.46);
 }
 
 export function FilmSet() {
@@ -168,6 +219,10 @@ export function FilmSet() {
     let acc = 0;
     let anim = 0;
     let hudTick = 0;
+    let draggedId: CrewId | null = null;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let dragMoved = false;
     const layout = { ox: 0, oy: 0, dw: 1, dh: 1 };
 
     const draw = () => {
@@ -210,17 +265,43 @@ export function FilmSet() {
       const toY = (ny: number) => layout.oy + ny * layout.dh;
       const size = layout.dh * 0.23;
 
+      for (const person of sim.people) {
+        drawWorkstationBack(ctx, toX(person.homeX), toY(person.homeY), size);
+      }
+      drawCoffeeCorner(ctx, toX(COFFEE_SPOT[0]), toY(COFFEE_SPOT[1]), size);
+
+      if (sim.people.some((person) => person.dragging)) {
+        for (const person of sim.people) {
+          const tx = toX(person.homeX);
+          const ty = toY(person.homeY);
+          ctx.save();
+          ctx.strokeStyle = person.dragging ? "#e2b340" : "#76c79a";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath();
+          ctx.ellipse(tx, ty - size * 0.06, size * 0.38, size * 0.15, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = "#f4ecdf";
+          ctx.font = "700 9px 'Source Sans 3', sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          ctx.fillText("PUESTO", tx, ty - size * 0.22);
+          ctx.restore();
+        }
+      }
+
       const ordered = [...sim.people].sort((a, b) => a.y - b.y);
       for (const p of ordered) {
         const x = toX(p.x);
         const y = toY(p.y);
-        const moving = p.state === "work" && Math.hypot(p.tx - p.x, p.ty - p.y) > 0.015;
+        const moving = (p.state === "work" || p.state === "coffee") && Math.hypot(p.tx - p.x, p.ty - p.y) > 0.015;
         const bob = p.state === "sleep" ? 0 : Math.sin(anim * (p.state === "angry" ? 22 : 3) + p.homeX * 12) * (p.state === "angry" ? 1.4 : 1.1);
         ctx.fillStyle = "rgba(0,0,0,0.28)";
         ctx.beginPath();
         ctx.ellipse(x, y, size * 0.22, size * 0.08, 0, 0, Math.PI * 2);
         ctx.fill();
-        if (p.ring > 0) {
+        if (p.ring > 0 || p.dragging) {
           ctx.strokeStyle = "#e2b340";
           ctx.lineWidth = 2;
           ctx.beginPath();
@@ -245,6 +326,15 @@ export function FilmSet() {
           ctx.fillRect(x - size * 0.15, y - size * 0.22 + bob, size * 0.11, size * 0.2);
           ctx.fillRect(x + size * 0.04, y - size * 0.22 + bob, size * 0.11, size * 0.2);
         }
+        if (Math.hypot(p.x - p.homeX, p.y - p.homeY) < 0.075) {
+          drawWorkstationFront(ctx, x, y, size);
+        }
+        if (p.state === "coffee" && !moving) {
+          ctx.fillStyle = "#f0d7a2";
+          ctx.fillRect(x + size * 0.18, y - size * 0.55, size * 0.07, size * 0.065);
+          ctx.fillStyle = "#f0d7a2";
+          ctx.fillRect(x + size * 0.245, y - size * 0.535, size * 0.025, size * 0.035);
+        }
         if (p.state === "angry") {
           ctx.strokeStyle = "#d4533c";
           ctx.lineWidth = 2;
@@ -262,7 +352,7 @@ export function FilmSet() {
         const lw = ctx.measureText(label).width + 10;
         ctx.fillStyle = "rgba(18,16,14,0.78)";
         ctx.fillRect(x - lw / 2, y + 4, lw, 15);
-        ctx.fillStyle = p.state === "angry" ? "#d4533c" : p.state === "sleep" ? "#b3a48f" : "#f4ecdf";
+        ctx.fillStyle = p.state === "angry" ? "#d4533c" : p.state === "sleep" ? "#b3a48f" : p.state === "coffee" ? "#e2b340" : "#f4ecdf";
         ctx.fillText(label, x, y + 6);
       }
 
@@ -330,21 +420,58 @@ export function FilmSet() {
     };
     raf = requestAnimationFrame(frame);
 
-    const onPointer = (event: PointerEvent) => {
-      unlock();
+    const pointerPosition = (event: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      const nx = (x - layout.ox) / layout.dw;
-      const ny = (y - layout.oy) / layout.dh;
-      sim.click(nx, ny);
+      return {
+        nx: (event.clientX - rect.left - layout.ox) / layout.dw,
+        ny: (event.clientY - rect.top - layout.oy) / layout.dh,
+      };
     };
-    canvas.addEventListener("pointerdown", onPointer);
+    const onPointerDown = (event: PointerEvent) => {
+      unlock();
+      const { nx, ny } = pointerPosition(event);
+      draggedId = sim.grab(nx, ny);
+      if (draggedId) {
+        dragStartX = nx;
+        dragStartY = ny;
+        dragMoved = false;
+        canvas.setPointerCapture(event.pointerId);
+      } else {
+        sim.click(nx, ny);
+      }
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (!draggedId) return;
+      const { nx, ny } = pointerPosition(event);
+      if (!dragMoved && Math.hypot(nx - dragStartX, ny - dragStartY) > 0.008) {
+        dragMoved = true;
+      }
+      if (dragMoved) sim.drag(draggedId, nx, ny);
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (!draggedId) return;
+      const { nx, ny } = pointerPosition(event);
+      if (dragMoved) sim.drop(draggedId, nx, ny);
+      else {
+        sim.cancelDrag(draggedId);
+        sim.click(nx, ny);
+      }
+      draggedId = null;
+      dragMoved = false;
+      setHud(sim.hud());
+    };
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("pointerdown", unlock);
 
     return () => {
       cancelAnimationFrame(raf);
-      canvas.removeEventListener("pointerdown", onPointer);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("pointerdown", unlock);
       simRef.current = null;
     };
@@ -363,13 +490,13 @@ export function FilmSet() {
         <div>
           <p className="text-xs font-semibold tracking-[0.22em] text-primary">SET DE RODAJE</p>
           <h1 className="font-display text-3xl leading-none text-fg">Pixel Set</h1>
-          <p className="mt-1 text-sm text-muted">Trabajan, discuten, se enojan y vuelven a la toma.</p>
+          <p className="mt-1 text-sm text-muted">Asigná puestos, interrumpí pausas y mantené vivo el rodaje.</p>
         </div>
         <p className="max-w-xs text-sm text-fg">{hud.mood}</p>
       </header>
 
       <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border bg-bg">
-        <canvas ref={canvasRef} className="h-full w-full touch-none" aria-label="Set de filmación con el equipo trabajando" />
+        <canvas ref={canvasRef} className="h-full w-full touch-none cursor-grab active:cursor-grabbing" aria-label="Set de filmación: arrastrá a cada integrante hasta su escritorio" />
         {!ready && (
           <p className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted">
             Preparando el set…
@@ -381,7 +508,12 @@ export function FilmSet() {
         <div>
           <p className="text-xs font-bold tracking-[0.16em] text-primary">MISIÓN · TOMA {hud.take}</p>
           <p className="mt-1 text-sm font-semibold text-fg">{hud.objective}</p>
-          <p className="mt-1 text-xs text-muted">Coordiná al equipo, resolvé los conflictos y conseguí una toma perfecta.</p>
+          <p className="mt-1 text-xs text-muted">Arrastrá a quienes se fueron a conversar o tomar café hasta su escritorio. Cada rescate mejora la toma.</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-bold tracking-wider">
+            <span className="rounded bg-bg px-2 py-1 text-primary">PUESTOS {hud.stationCount}/{CREW.length}</span>
+            <span className="rounded bg-bg px-2 py-1 text-amber-400">PAUSAS {hud.coffeeCount}</span>
+            <span className="rounded bg-bg px-2 py-1 text-fg">RESCATES {hud.manualRescues}/{hud.rescueGoal}</span>
+          </div>
         </div>
         <div className="min-w-24 self-center rounded-md bg-bg px-4 py-2 text-center">
           <p className="text-[10px] font-bold tracking-widest text-muted">TIEMPO</p>
@@ -407,7 +539,7 @@ export function FilmSet() {
             className="min-h-11 shrink-0 rounded-md border border-border bg-surface px-3 py-1.5 text-left"
           >
             <span className="block text-sm font-semibold text-fg">{p.name}</span>
-            <span className={`block text-xs ${p.state === "angry" ? "text-danger" : p.state === "sleep" ? "text-muted" : "text-primary"}`}>
+            <span className={`block text-xs ${p.state === "angry" ? "text-danger" : p.state === "sleep" ? "text-muted" : p.state === "coffee" ? "text-amber-400" : "text-primary"}`}>
               {p.role} · {stateLabel(p.state, p.moving)}
             </span>
           </button>
@@ -455,7 +587,7 @@ export function FilmSet() {
           </p>
         ))}
       </div>
-      <p className="text-xs text-muted">Tocá a alguien para escuchar su tarea. Coordiná para recuperar al equipo; ¡Acción! pone la toma en marcha.</p>
+      <p className="text-xs text-muted">Arrastrá un personaje con el mouse y soltalo sobre el óvalo marcado como PUESTO. Un clic sin arrastrar muestra su tarea. ¡Acción! devuelve al equipo a sus estaciones.</p>
     </main>
   );
 }
