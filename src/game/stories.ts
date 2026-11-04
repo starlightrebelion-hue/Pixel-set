@@ -169,10 +169,10 @@ export function isStoryDefinition(value: unknown): value is StoryDefinition {
       !!item &&
       typeof item.title === "string" &&
       typeof item.briefing === "string" &&
-      typeof item.qualityTarget === "number" &&
-      typeof item.rescueGoal === "number" &&
-      typeof item.stressLimit === "number" &&
-      typeof item.timeLimit === "number"
+      Number.isInteger(item.qualityTarget) && item.qualityTarget >= 1 && item.qualityTarget <= 100 &&
+      Number.isInteger(item.rescueGoal) && item.rescueGoal >= 1 && item.rescueGoal <= 8 &&
+      Number.isInteger(item.stressLimit) && item.stressLimit >= 1 && item.stressLimit <= 100 &&
+      Number.isInteger(item.timeLimit) && item.timeLimit >= 30 && item.timeLimit <= 300
     )
   );
 }
