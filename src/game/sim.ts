@@ -190,6 +190,14 @@ export function createSim(onLog: (line: LogLine) => void) {
     const b = byId(pending.b);
     if (a.partner === b.id) a.partner = null;
     if (b.partner === a.id) b.partner = null;
+    if (a.state === "work" && !a.dragging) {
+      a.tx = a.homeX;
+      a.ty = a.homeY;
+    }
+    if (b.state === "work" && !b.dragging) {
+      b.tx = b.homeX;
+      b.ty = b.homeY;
+    }
     pending = null;
   }
 
@@ -198,6 +206,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     p.partner = null;
     p.napping = false;
     p.dragging = false;
+    p.boredom = 0;
     p.tx = p.homeX;
     p.ty = p.homeY;
     p.decision = 9 + Math.random() * 6;
@@ -309,7 +318,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       p.ring = Math.max(0, p.ring - dt);
       p.cooldown = Math.max(0, p.cooldown - dt);
 
-      if (p.state === "coffee") {
+      if (!p.dragging && p.state === "coffee") {
         // Coffee time starts only after the person reaches the coffee corner.
         if (dist(p.x, p.y, p.tx, p.ty) < 0.035) {
           p.stateTimer -= dt;
@@ -319,7 +328,7 @@ export function createSim(onLog: (line: LogLine) => void) {
             p.cooldown = 3.5;
           }
         }
-      } else if (p.state === "angry" || p.state === "talk" || p.state === "sleep") {
+      } else if (!p.dragging && (p.state === "angry" || p.state === "talk" || p.state === "sleep")) {
         p.stateTimer -= dt;
         if (p.stateTimer <= 0) {
           if (p.state === "angry" && p.id !== "director") {
@@ -372,6 +381,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       for (let j = i + 1; j < people.length; j++) {
         const a = people[i]!;
         const b = people[j]!;
+        if (a.dragging || b.dragging) continue;
         const dx = a.x - b.x;
         const dy = a.y - b.y;
         const d = Math.hypot(dx, dy) || 0.0001;
@@ -594,6 +604,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     p.stateTimer = 0;
     p.napping = false;
     p.boredom = 0;
+    p.decision = 10 + Math.random() * 6;
     p.cooldown = Math.max(p.cooldown, 8);
     p.tx = p.homeX;
     p.ty = p.homeY;
@@ -640,6 +651,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     if (best.state === "sleep") say(best, "Shh… cinco minutos y vuelvo.", "ok");
     else if (best.state === "angry") say(best, "Ya lo estoy arreglando. No me apuren.", "angry");
     else if (best.state === "talk") say(best, "Estoy en esto con el equipo.", "ok");
+    else if (best.state === "coffee") say(best, "Estoy tomando un café. Arrastrame a mi escritorio para volver.", "ok");
     else say(best, best.job, best.id === "director" ? "dir" : "ok");
   }
 
@@ -662,7 +674,7 @@ export function createSim(onLog: (line: LogLine) => void) {
         name: p.name,
         role: p.role,
         state: p.state,
-        moving: p.state === "work" && dist(p.x, p.y, p.tx, p.ty) > 0.02,
+        moving: (p.state === "work" || p.state === "coffee") && dist(p.x, p.y, p.tx, p.ty) > 0.02,
       })),
     };
   }
