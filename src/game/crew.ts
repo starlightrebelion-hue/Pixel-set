@@ -121,20 +121,22 @@ export const STATIONS: Record<
   MapId,
   Partial<Record<CrewId, { x: number; y: number; seated?: boolean }>>
 > = {
+  // Desk rooms: everyone stationed here works seated at desks
   guion: {
     guion: { x: 0.32, y: 0.62, seated: true },
     produccion: { x: 0.48, y: 0.64, seated: true },
     director: { x: 0.62, y: 0.6, seated: true },
   },
   set: {
+    // Director chair + standing work stations with work loop
     director: { x: 0.18, y: 0.78, seated: true },
-    camara: { x: 0.4, y: 0.55 },
-    luz: { x: 0.62, y: 0.52 },
-    sonido: { x: 0.74, y: 0.7 },
-    actores: { x: 0.52, y: 0.68 },
-    maquillaje: { x: 0.44, y: 0.74 },
-    produccion: { x: 0.58, y: 0.88 },
-    montaje: { x: 0.28, y: 0.72 },
+    camara: { x: 0.4, y: 0.55, seated: true },
+    luz: { x: 0.62, y: 0.52, seated: true },
+    sonido: { x: 0.74, y: 0.7, seated: true },
+    actores: { x: 0.52, y: 0.68, seated: true },
+    maquillaje: { x: 0.44, y: 0.74, seated: true },
+    produccion: { x: 0.58, y: 0.88, seated: true },
+    montaje: { x: 0.28, y: 0.72, seated: true },
   },
   montaje: {
     montaje: { x: 0.28, y: 0.62, seated: true },
@@ -294,7 +296,7 @@ export const CHATS: Array<{ a: CrewId; b: CrewId; line: string; reply: string }>
 ];
 
 export function stateLabel(state: Mood, moving: boolean): string {
-  if (state === "seated") return "Sentado";
+  if (state === "seated") return "Trabaja sentado";
   if (state === "work" && moving) return "Camina";
   if (state === "work") return "Trabaja";
   if (state === "angry") return "Enojado";
