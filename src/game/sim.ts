@@ -41,6 +41,9 @@ export type Person = {
   bubble: Bubble | null;
   ring: number;
   dragging: boolean;
+  dragOffsetX: number;
+  dragOffsetY: number;
+  dragStartedAway: boolean;
 };
 
 export type Particle = {
@@ -152,6 +155,9 @@ export function createSim(onLog: (line: LogLine) => void) {
     bubble: null,
     ring: 0,
     dragging: false,
+    dragOffsetX: 0,
+    dragOffsetY: 0,
+    dragStartedAway: false,
   }));
 
   const byId = (id: CrewId) => people.find((p) => p.id === id)!;
@@ -206,6 +212,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     p.partner = null;
     p.napping = false;
     p.dragging = false;
+    p.dragStartedAway = false;
     p.boredom = 0;
     p.tx = p.homeX;
     p.ty = p.homeY;
@@ -320,7 +327,7 @@ export function createSim(onLog: (line: LogLine) => void) {
 
       if (!p.dragging && p.state === "coffee") {
         // Coffee time starts only after the person reaches the coffee corner.
-        if (dist(p.x, p.y, p.tx, p.ty) < 0.035) {
+        if (dist(p.x, p.y, p.tx, p.ty) < 0.05) {
           p.stateTimer -= dt;
           if (p.stateTimer <= 0) {
             say(p, "Listo, café terminado. Vuelvo a mi puesto.", "ok");
@@ -561,6 +568,9 @@ export function createSim(onLog: (line: LogLine) => void) {
       }
       best.partner = null;
     }
+    best.dragStartedAway = best.state !== "work" || best.partner !== null || dist(best.x, best.y, best.homeX, best.homeY) > 0.07;
+    best.dragOffsetX = best.x - nx;
+    best.dragOffsetY = best.y - ny;
     best.dragging = true;
     best.ring = 2.2;
     return best.id;
@@ -569,7 +579,7 @@ export function createSim(onLog: (line: LogLine) => void) {
   function drag(id: CrewId, nx: number, ny: number) {
     const p = byId(id);
     if (!p.dragging) return;
-    const [x, y] = clampPoint(nx, ny);
+    const [x, y] = clampPoint(nx + p.dragOffsetX, ny + p.dragOffsetY);
     if (x < p.x - 0.002) p.facing = -1;
     else if (x > p.x + 0.002) p.facing = 1;
     p.x = x;
@@ -579,7 +589,9 @@ export function createSim(onLog: (line: LogLine) => void) {
   }
 
   function cancelDrag(id: CrewId) {
-    byId(id).dragging = false;
+    const p = byId(id);
+    p.dragging = false;
+    p.dragStartedAway = false;
   }
 
   function drop(id: CrewId, nx: number, ny: number) {
@@ -587,7 +599,8 @@ export function createSim(onLog: (line: LogLine) => void) {
     if (!p.dragging) return;
     drag(id, nx, ny);
     p.dragging = false;
-    const wasAway = p.state !== "work" || p.partner !== null || dist(p.x, p.y, p.homeX, p.homeY) > 0.07;
+    const wasAway = p.dragStartedAway;
+    p.dragStartedAway = false;
     if (pending && (pending.a === id || pending.b === id)) cancelChat();
     if (p.partner) {
       const partner = byId(p.partner);
@@ -609,7 +622,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     p.tx = p.homeX;
     p.ty = p.homeY;
 
-    const atStation = dist(p.x, p.y, p.homeX, p.homeY) <= 0.12;
+    const atStation = dist(nx, ny, p.homeX, p.homeY) <= 0.12;
     if (atStation) {
       p.x = p.homeX;
       p.y = p.homeY;
