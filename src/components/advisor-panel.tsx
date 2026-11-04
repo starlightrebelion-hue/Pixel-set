@@ -23,6 +23,14 @@ const fields: Array<{ key: TextField; label: string; placeholder: string }> = [
   { key: "visualApproach", label: "Propuesta visual", placeholder: "Paleta, luz, encuadres, cámara y atmósfera" },
 ];
 
+const numericFields: Array<{ key: "estimatedBudget" | "availableBudget" | "estimatedDays" | "availableDays" | "targetMinutes"; label: string }> = [
+  { key: "estimatedBudget", label: "Presupuesto estimado" },
+  { key: "availableBudget", label: "Presupuesto disponible" },
+  { key: "estimatedDays", label: "Días estimados" },
+  { key: "availableDays", label: "Días disponibles" },
+  { key: "targetMinutes", label: "Duración objetivo (minutos)" },
+];
+
 const priorityLabel = { critical: "Crítica", high: "Alta", medium: "Media", low: "Baja" };
 const statusLabel = { incomplete: "Información incompleta", "needs-work": "Necesita trabajo", promising: "Prometedor", ready: "Listo para desarrollar" };
 
@@ -64,6 +72,21 @@ export function AdvisorPanel() {
               placeholder={field.placeholder}
               rows={field.key === "premise" || field.key === "visualApproach" ? 2 : 1}
               className="w-full resize-y rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-primary"
+            />
+          </label>
+        ))}
+        {numericFields.map((field) => (
+          <label key={field.key}>
+            <span className="mb-1 block text-xs font-semibold text-muted">{field.label}</span>
+            <input
+              type="number"
+              min="0"
+              value={project[field.key] ?? ""}
+              onChange={(event) => setProject((current) => ({
+                ...current,
+                [field.key]: event.target.value === "" ? undefined : Number(event.target.value),
+              }))}
+              className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-primary"
             />
           </label>
         ))}
