@@ -33,8 +33,8 @@ export function CommandBar({
               ref={minimapRef}
               width={140}
               height={100}
-              className="block h-[72px] w-[100px] sm:h-[100px] sm:w-[140px]"
-              aria-label="Minimapa del set"
+              className="block h-[72px] w-[100px] touch-none sm:h-[100px] sm:w-[140px]"
+              aria-label="Minimapa del set — tocá para saltar la cámara"
             />
             <span className="pointer-events-none absolute left-1 top-0.5 text-[8px] font-bold tracking-wider text-[#9fbf5a]">
               MAPA
@@ -130,7 +130,7 @@ export function CommandBar({
           </div>
 
           <p className="truncate px-1 text-[9px] text-[#7a8f4a]">
-            Rueda: zoom · Click der. arrastrar: pan · Click: seleccionar / mover
+            Pinch: zoom · Arrastrar: pan · Tocar: seleccionar · Minimapa: saltar vista
           </p>
         </div>
 
