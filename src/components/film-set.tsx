@@ -341,6 +341,42 @@ export function FilmSet() {
     });
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable=true]")) return;
+      const panelKeys: Record<string, "director" | "story" | "advisors"> = {
+        F1: "director", F2: "story", F3: "advisors",
+      };
+      if (panelKeys[event.key]) {
+        event.preventDefault();
+        const panel = panelKeys[event.key]!;
+        setActiveWindow((current) => current === panel ? null : panel);
+        return;
+      }
+      if (event.key === "Escape") {
+        setActiveWindow(null);
+        return;
+      }
+      if (event.key === "F4" || event.key === "F5" || event.key === "F6") {
+        event.preventDefault();
+        const sim = simRef.current;
+        if (event.key === "F6") {
+          camRef.current = resetCamera();
+          setCamTick((n) => n + 1);
+        } else if (sim) {
+          if (event.key === "F4") {
+            if (sim.hud().paused) sim.accion();
+            else sim.corten();
+          } else sim.coordinate();
+          setHud(sim.hud());
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   void camTick;
 
   return (
@@ -387,15 +423,15 @@ export function FilmSet() {
 
       {activeWindow && (
         <div
-          className="absolute inset-0 z-30 flex items-end justify-center bg-black/55 p-3 pb-[120px] sm:items-center sm:pb-3"
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/65 p-2 backdrop-blur-sm sm:p-6"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setActiveWindow(null); }}
         >
-          <section className="flex max-h-[calc(100dvh-140px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-[#4a6b28] bg-[#12180c]/98 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#3d5a1e] px-4 py-3">
+          <section className="sc-window flex max-h-[calc(100dvh-24px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-[#77866b] bg-[#10191a]/[.98] shadow-2xl">
+            <div className="sc-window-titlebar flex items-center justify-between border-b border-[#53695b] px-4 py-3">
               <h2 className="font-display text-lg text-white">
                 {activeWindow === "director" ? "Puesta en escena" : activeWindow === "story" ? "Director narrativo" : "Estudio y asesores"}
               </h2>
-              <button type="button" onClick={() => setActiveWindow(null)} className="sc-btn px-3 py-1 text-sm">×</button>
+              <button type="button" onClick={() => setActiveWindow(null)} className="sc-window-close px-3 py-1 text-sm">×</button>
             </div>
             <div className="min-h-0 overflow-y-auto p-3 sm:p-5">
               {activeWindow === "director" && snap && directorRef.current && (
