@@ -55,6 +55,7 @@ export function FilmSet() {
   const [hud, setHud] = useState<Hud>(INITIAL_HUD);
   const [log, setLog] = useState<LogLine[]>(INITIAL_LOG);
   const [ready, setReady] = useState(false);
+  const [activeWindow, setActiveWindow] = useState<"director" | "story" | "advisors" | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -219,37 +220,51 @@ export function FilmSet() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-3 px-3 py-3">
-      <header>
-        <p className="text-xs font-semibold tracking-[0.22em] text-primary">SET DE RODAJE</p>
-        <h1 className="font-display text-3xl text-fg">Pixel Set</h1>
-        <p className="text-sm text-muted">{hud.mood}</p>
-      </header>
-      <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border bg-bg">
-        <canvas ref={canvasRef} className="h-full w-full touch-none" aria-label="Pixel Set" />
-        {!ready && (
-          <p className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted">
-            Preparando el set…
-          </p>
-        )}
+    <main className="studio-game relative h-[100dvh] min-h-[480px] w-full overflow-hidden bg-[#100e0c] text-fg">
+      <div className="absolute inset-0">
+        <canvas ref={canvasRef} className="h-full w-full touch-none" aria-label="Pixel Set — escenario de rodaje" />
+        {!ready && <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/35 text-sm text-muted">Preparando el set…</div>}
       </div>
-      <p className="text-xs text-muted">
-        Nora (marketing) usa sprites teal derivados de Sol. Estrellas: {hud.totalStars ?? 0}
-      </p>
-      {snap && directorRef.current && <SetDirectorPanel snap={snap} director={directorRef.current} />}
-      <StoryDirector
-        onDecision={(choice) =>
-          run((sim) =>
-            sim.storyDecision(
-              choice.consequence,
-              choice.effects.quality ?? 0,
-              choice.effects.tension ?? 0,
-              choice.effects.morale ?? 0,
-            ),
-          )
-        }
-      />
-      <AdvisorPanel />
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 bg-gradient-to-b from-black/75 via-black/35 to-transparent px-3 pb-7 pt-3 sm:px-6 sm:pt-5">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold tracking-[0.2em] text-primary sm:text-xs">SET DE RODAJE</p>
+          <h1 className="font-display text-xl text-white drop-shadow sm:text-3xl">Pixel Set</h1>
+          <p className="max-w-[52vw] truncate text-xs text-white/75 sm:text-sm">{hud.mood}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5 text-[10px] sm:gap-2 sm:text-xs">
+          <div className="rounded-md border border-white/15 bg-black/55 px-2 py-1.5 backdrop-blur"><span className="text-white/55">TOMA </span><strong className="text-white">{hud.take}</strong></div>
+          <div className="rounded-md border border-white/15 bg-black/55 px-2 py-1.5 backdrop-blur"><span className="text-white/55">ESTRELLAS </span><strong className="text-primary">{hud.totalStars ?? 0}</strong></div>
+          <div className="rounded-md border border-white/15 bg-black/55 px-2 py-1.5 backdrop-blur"><span className="text-white/55">EQUIPO </span><strong className="text-white">{hud.stationCount}</strong></div>
+        </div>
+      </header>
+      <div className="pointer-events-none absolute bottom-[76px] left-3 z-10 max-w-[min(72vw,340px)] rounded-lg border border-white/10 bg-black/55 px-3 py-2 text-xs text-white/85 shadow-lg backdrop-blur sm:bottom-24 sm:left-6">
+        <p className="text-[9px] font-bold tracking-[0.18em] text-primary">OBJETIVO ACTUAL</p>
+        <p className="mt-0.5 truncate font-semibold">{hud.objective}</p>
+        <p className="mt-0.5 text-[10px] text-white/55">{hud.mapLabel} · {hud.timeLeft}s</p>
+      </div>
+      <nav aria-label="Menú del estudio" className="absolute bottom-3 left-1/2 z-20 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 rounded-xl border border-white/15 bg-[#17130f]/95 p-1.5 shadow-2xl shadow-black/50 backdrop-blur-xl sm:bottom-5 sm:gap-2 sm:p-2">
+        <button type="button" onClick={() => setActiveWindow(activeWindow === "director" ? null : "director")} aria-expanded={activeWindow === "director"} className={`flex min-w-[62px] flex-col items-center gap-0.5 rounded-lg px-2 py-2 text-[10px] font-semibold transition-colors sm:min-w-[78px] sm:px-3 ${activeWindow === "director" ? "bg-primary/20 text-primary" : "text-white/75 hover:bg-white/10 hover:text-white"}`}><span className="text-lg leading-none">🎬</span><span>Escena</span></button>
+        <button type="button" onClick={() => setActiveWindow(activeWindow === "story" ? null : "story")} aria-expanded={activeWindow === "story"} className={`flex min-w-[62px] flex-col items-center gap-0.5 rounded-lg px-2 py-2 text-[10px] font-semibold transition-colors sm:min-w-[78px] sm:px-3 ${activeWindow === "story" ? "bg-primary/20 text-primary" : "text-white/75 hover:bg-white/10 hover:text-white"}`}><span className="text-lg leading-none">📖</span><span>Historias</span></button>
+        <button type="button" onClick={() => setActiveWindow(activeWindow === "advisors" ? null : "advisors")} aria-expanded={activeWindow === "advisors"} className={`flex min-w-[62px] flex-col items-center gap-0.5 rounded-lg px-2 py-2 text-[10px] font-semibold transition-colors sm:min-w-[78px] sm:px-3 ${activeWindow === "advisors" ? "bg-primary/20 text-primary" : "text-white/75 hover:bg-white/10 hover:text-white"}`}><span className="text-lg leading-none">🧠</span><span>Estudio</span></button>
+        <button type="button" onClick={() => run((sim) => sim.togglePause())} className="flex min-w-[62px] flex-col items-center gap-0.5 rounded-lg px-2 py-2 text-[10px] font-semibold text-white/75 transition-colors hover:bg-white/10 hover:text-white sm:min-w-[78px] sm:px-3"><span className="text-lg leading-none">{hud.paused ? "▶️" : "⏸️"}</span><span>{hud.paused ? "Seguir" : "Pausa"}</span></button>
+        <button type="button" onClick={() => setActiveWindow(null)} aria-label="Cerrar ventanas" className="ml-0.5 flex size-10 items-center justify-center rounded-lg border border-white/10 text-lg text-white/65 transition-colors hover:bg-white/10 hover:text-white">×</button>
+      </nav>
+      {activeWindow && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/45 p-2 backdrop-blur-[2px] sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveWindow(null); }}>
+          <section role="dialog" aria-modal="true" aria-label={activeWindow === "director" ? "Puesta en escena" : activeWindow === "story" ? "Director de historias" : "Asesores del estudio"} className="flex max-h-[calc(100dvh-104px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-primary/35 bg-[#17130f]/[.98] shadow-2xl shadow-black/60">
+            <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-black/25 px-4 py-3 sm:px-5">
+              <div><p className="text-[9px] font-bold tracking-[0.2em] text-primary">PIXEL SET · PANEL DE CONTROL</p><h2 className="font-display text-lg text-white sm:text-xl">{activeWindow === "director" ? "Puesta en escena" : activeWindow === "story" ? "Director narrativo" : "Estudio y asesores"}</h2></div>
+              <button type="button" onClick={() => setActiveWindow(null)} aria-label="Cerrar ventana" className="flex size-9 items-center justify-center rounded-md border border-white/10 text-xl text-white/70 hover:bg-white/10 hover:text-white">×</button>
+            </div>
+            <div className="min-h-0 overflow-y-auto p-3 sm:p-5">
+              {activeWindow === "director" && snap && directorRef.current && <SetDirectorPanel snap={snap} director={directorRef.current} />}
+              {activeWindow === "story" && <StoryDirector onDecision={(choice) => run((sim) => sim.storyDecision(choice.consequence, choice.effects.quality ?? 0, choice.effects.tension ?? 0, choice.effects.morale ?? 0))} />}
+              {activeWindow === "advisors" && <AdvisorPanel />}
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
+}
 }
