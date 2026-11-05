@@ -1,3 +1,4 @@
+import { DEFAULT_STORY, type StoryDefinition } from "@/game/stories";
 import type { CrewId } from "@/game/crew";
 import type { Hud, LogLine, Sim } from "@/game/sim";
 
@@ -20,7 +21,6 @@ type TakeResult = {
   dayComplete: boolean;
 };
 
-const DAY_TARGET = 3;
 const GENRES = ["Drama", "Thriller", "Comedia"] as const;
 
 const CRISES: Crisis[] = [
@@ -54,7 +54,8 @@ const CRISES: Crisis[] = [
   },
 ];
 
-type Enhanced = Sim & {
+export type Enhanced = Sim & {
+  startStory: (story: StoryDefinition) => void;
   resolveCrisis: (pick: "A" | "B") => void;
   dismissTakeResult: () => void;
   __enhanced?: boolean;
@@ -75,6 +76,10 @@ function pickCrisis(): Crisis {
 export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced {
   if ((base as Enhanced).__enhanced) return base as Enhanced;
 
+  let story: StoryDefinition = DEFAULT_STORY;
+  let chapterIdx = 0, lives = 3, campaignComplete = false, gameOver = false;
+  const chapter = () => story.chapters[chapterIdx] ?? story.chapters[story.chapters.length - 1]!;
+  const DAY_TARGET_FN = () => 2 + chapterIdx;
   let dayGoodTakes = 0;
   let totalStars = 0;
   let lastStars = 0;
@@ -98,7 +103,13 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     const stars = starsFromQuality(quality);
     lastStars = stars;
     totalStars += stars;
-    if (stars >= 2) dayGoodTakes += 1;
+    const good = quality >= chapter().qualityTarget;
+    if (good) dayGoodTakes += 1;
+    if (stars === 0 && !gameOver) {
+      lives = Math.max(0, lives - 1);
+      if (lives === 0) { gameOver = true; onLog({ id: Date.now(), who: "Marcos", text: "Nos quedamos sin intentos. Fin de la jornada.", kind: "angry" }); }
+      else onLog({ id: Date.now(), who: "Marcos", text: `Toma perdida. Quedan ${lives} intentos.`, kind: "angry" });
+    }
     if (dayGoodTakes >= 2 && !unlockedGenres.includes("Thriller")) {
       unlockedGenres = [...unlockedGenres, "Thriller"];
       onLog({ id: Date.now(), who: "Marcos", text: "Desbloqueamos tono Thriller.", kind: "ok" });
@@ -110,7 +121,7 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     return {
       stars,
       quality: Math.round(quality),
-      good: stars >= 2,
+      good,
       summary:
         stars >= 3
           ? "Toma excelente. El plano respira y el eje se entiende."
@@ -121,8 +132,8 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
               : "Toma descartable. Mejor no imprimir esta cinta.",
       playback: stars >= 3 ? "great" : stars >= 2 ? "ok" : "bad",
       dayGoodTakes,
-      dayTarget: DAY_TARGET,
-      dayComplete: dayGoodTakes >= DAY_TARGET,
+      dayTarget: DAY_TARGET_FN(),
+      dayComplete: dayGoodTakes >= DAY_TARGET_FN(),
     };
   }
 
@@ -139,8 +150,11 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
 
   function dismissTakeResult() {
     takeResult = null;
-    if (dayGoodTakes >= DAY_TARGET) {
+    if (dayGoodTakes >= DAY_TARGET_FN()) {
       dayGoodTakes = 0;
+      if (chapterIdx + 1 >= story.chapters.length) { campaignComplete = true; onLog({ id: Date.now(), who: "Rey", text: `¡Fin de "${story.title}"! El equipo terminó la película.`, kind: "dir" }); return; }
+      chapterIdx += 1;
+      onLog({ id: Date.now(), who: "Rey", text: `Capítulo ${chapterIdx + 1}: ${chapter().title}. ${chapter().briefing}`, kind: "dir" });
       const idx = unlockedGenres.indexOf(genre);
       genre = unlockedGenres[(idx + 1) % unlockedGenres.length] ?? "Drama";
       onLog({ id: Date.now(), who: "Marcos", text: `Nuevo día · género: ${genre}.`, kind: "ok" });
@@ -148,7 +162,7 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   }
 
   function step(dt: number) {
-    if (crisis) return;
+    if (crisis || campaignComplete || gameOver) return;
     origStep(dt);
     const h = origHud();
 
@@ -174,11 +188,13 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
       ...h,
       scene: `${sceneBase} · ${genre}`,
       dayGoodTakes,
-      dayTarget: DAY_TARGET,
+      dayTarget: DAY_TARGET_FN(),
       lastStars,
       totalStars,
       genre,
       unlockedGenres: [...unlockedGenres],
+      storyTitle: story.title, storyPremise: story.premise, chapterTitle: chapter().title, chapterBriefing: chapter().briefing,
+      chapterIndex: chapterIdx + 1, chapterCount: story.chapters.length, lives, campaignComplete, gameOver,
       crisis,
       takeResult,
       onMarkReady: h.phase === "prep",
@@ -191,12 +207,19 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
         ? "Elegí cómo resolver la crisis"
         : takeResult
           ? takeResult.dayComplete
-            ? `Día listo: ${dayGoodTakes}/${DAY_TARGET} tomas buenas`
+            ? `Día listo: ${dayGoodTakes}/${DAY_TARGET_FN()} tomas buenas`
             : `Toma: ${"★".repeat(lastStars)}${"☆".repeat(3 - lastStars)}`
           : h.objective,
       mood: crisis ? `Crisis: ${crisis.title}` : takeResult ? "Toma evaluada." : h.mood,
       paused: h.paused || !!crisis,
     };
+  }
+
+  function startStory(next: StoryDefinition) {
+    story = next.chapters?.length ? next : DEFAULT_STORY;
+    chapterIdx = 0; lives = 3; campaignComplete = false; gameOver = false;
+    dayGoodTakes = 0; totalStars = 0; lastStars = 0; crisis = null; takeResult = null; crisisCooldown = 18;
+    onLog({ id: Date.now(), who: "Rey", text: `Comienza "${story.title}". ${chapter().briefing}`, kind: "dir" });
   }
 
   function accion() {
@@ -206,6 +229,6 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
 
   // OJO: `{...base}` congelaría los getters (map, phase, shake); se copian los descriptores.
   const out = Object.defineProperties({}, Object.getOwnPropertyDescriptors(base)) as Enhanced;
-  Object.assign(out, { step, hud, accion, resolveCrisis, dismissTakeResult, __enhanced: true });
+  Object.assign(out, { step, hud, accion, startStory, resolveCrisis, dismissTakeResult, __enhanced: true });
   return out;
 }
