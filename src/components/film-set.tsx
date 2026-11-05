@@ -418,6 +418,7 @@ export function FilmSet() {
         minimapRef={minimapRef}
         onSelectMap={(map) => {
           run((sim) => sim.goMap(map));
+          setSelectedId(null);
           camRef.current = resetCamera();
           setCamTick((n) => n + 1);
         }}
