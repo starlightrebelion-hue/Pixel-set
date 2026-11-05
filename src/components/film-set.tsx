@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Clapperboard, Film, Library, Megaphone, Pause, TriangleAlert, Users } from "lucide-react";
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
-import { CREW, stateLabel, type CrewId, type MapId } from "@/game/crew";
+import { CREW, SCENES, stateLabel, type CrewId, type MapId } from "@/game/crew";
 import { COFFEE_SPOT, createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
 import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
-import { drawGenreSet } from "@/game/genre-sets";
+import { getDioramaBackgrounds, drawDioramaAtmosphere } from "@/game/diorama-sets";
+import { GENRE_SETS, type GenreId } from "@/game/genre-sets";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import { StoryDirector } from "@/components/story-director";
 
@@ -110,14 +111,25 @@ export function FilmSet() {
     simRef.current = sim;
 
     const sprites = new Map<string, HTMLImageElement>();
-    const maps = new Map<MapId, HTMLImageElement>();
+    const maps = new Map<string, HTMLImageElement>();
     let loaded = 0;
     const needed = CREW.length * POSES.length + 3;
     const mark = () => { loaded += 1; if (loaded >= needed) setReady(true); };
     (Object.keys(MAP_FILES) as MapId[]).forEach((id) => {
       const img = new Image(); img.onload = () => mark(); img.onerror = () => mark();
-      img.src = assetUrl(MAP_FILES[id]); maps.set(id, img);
+      img.src = assetUrl(MAP_FILES[id]); maps.set(MAP_FILES[id], img);
     });
+    const dioramaPaths = new Set<string>();
+    for (const genre of Object.keys(GENRE_SETS) as GenreId[]) {
+      for (const scene of SCENES) {
+        for (const path of getDioramaBackgrounds(scene, genre)) dioramaPaths.add(path);
+      }
+    }
+    for (const path of dioramaPaths) {
+      const img = new Image();
+      img.onload = () => mark(); img.onerror = () => mark();
+      img.src = assetUrl(path); maps.set(path, img);
+    }
     for (const crew of CREW) {
       for (const pose of POSES) {
         const img = new Image();
@@ -145,7 +157,7 @@ export function FilmSet() {
       const h = Math.max(1, Math.round(rect.height * dpr));
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.imageSmoothingEnabled = false;
+      ctx.imageSmoothingEnabled = true;
       const cw = rect.width, ch = rect.height;
       ctx.fillStyle = "#12100e"; ctx.fillRect(0, 0, cw, ch);
       const shake = sim.shake;
@@ -153,33 +165,22 @@ export function FilmSet() {
       const sy = shake ? (Math.random() - 0.5) * shake * 6 : 0;
       ctx.save(); ctx.translate(sx, sy);
       const mapId = (sim.map as MapId) || "set";
-      const stage = maps.get(mapId);
-      const setStage = maps.get("set");
-      if (mapId === "set" && stage && stage.naturalWidth) {
-        const scale = Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);
+      const activeHud = sim.hud();
+      const legacyPath = MAP_FILES[mapId];
+      const sceneBackgrounds = mapId === "set" ? getDioramaBackgrounds(activeHud.scene, activeHud.genre) : [];
+      const selectedPath = sceneBackgrounds.find((path) => maps.get(path)?.naturalWidth) ?? legacyPath;
+      const stage = maps.get(selectedPath);
+      if (stage?.naturalWidth) {
+        const scale = Math.max(cw / stage.naturalWidth, ch / stage.naturalHeight);
         layout.dw = stage.naturalWidth * scale; layout.dh = stage.naturalHeight * scale;
         layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
         ctx.drawImage(stage, layout.ox, layout.oy, layout.dw, layout.dh);
-      } else if (mapId === "guion" || mapId === "montaje") {
-        if (stage && stage.naturalWidth) {
-          const scale = Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);
-          layout.dw = stage.naturalWidth * scale; layout.dh = stage.naturalHeight * scale;
-          layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
-          ctx.drawImage(stage, layout.ox, layout.oy, layout.dw, layout.dh);
-        } else {
-          layout.ox = 0; layout.oy = 0; layout.dw = cw; layout.dh = ch;
-          if (mapId === "guion") drawGuionRoom(ctx, layout.ox, layout.oy, layout.dw, layout.dh);
-          else drawMontajeRoom(ctx, layout.ox, layout.oy, layout.dw, layout.dh);
-        }
-      } else if (setStage && setStage.naturalWidth) {
-        const scale = Math.min(cw / setStage.naturalWidth, ch / setStage.naturalHeight);
-        layout.dw = setStage.naturalWidth * scale; layout.dh = setStage.naturalHeight * scale;
-        layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
-        ctx.drawImage(setStage, layout.ox, layout.oy, layout.dw, layout.dh);
+        if (mapId === "set") drawDioramaAtmosphere(ctx, layout.ox, layout.oy, layout.dw, layout.dh);
       } else {
         layout.ox = 0; layout.oy = 0; layout.dw = cw; layout.dh = ch;
+        if (mapId === "guion") drawGuionRoom(ctx, layout.ox, layout.oy, layout.dw, layout.dh);
+        else if (mapId === "montaje") drawMontajeRoom(ctx, layout.ox, layout.oy, layout.dw, layout.dh);
       }
-      if (mapId === "set" && stage?.naturalWidth) drawGenreSet(ctx, layout.ox, layout.oy, layout.dw, layout.dh, sim.hud().genre);
       const toX = (nx: number) => layout.ox + nx * layout.dw;
       const toY = (ny: number) => layout.oy + ny * layout.dh;
       const size = layout.dh * 0.23;
