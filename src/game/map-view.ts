@@ -19,10 +19,11 @@ type TouchCamOpts = {
   onCrewPointerDown?: (sx: number, sy: number, rect: DOMRect) => CrewId | null;
   onCrewDrag?: (id: CrewId, sx: number, sy: number, rect: DOMRect) => void;
   onCrewDrop?: (id: CrewId, sx: number, sy: number, rect: DOMRect, moved: boolean) => void;
+  onCrewCancel?: (id: CrewId) => void;
 };
 
 /** Controles de cámara multi-touch / mouse: pan, pinch zoom, tap. */
-export function attachTouchCamera({ canvas, camRef, onCamChange, onTap, onCrewPointerDown, onCrewDrag, onCrewDrop }: TouchCamOpts) {
+export function attachTouchCamera({ canvas, camRef, onCamChange, onTap, onCrewPointerDown, onCrewDrag, onCrewDrop, onCrewCancel }: TouchCamOpts) {
   let mode: "none" | "pan" | "pinch" | "tap" | "crew" = "none";
   let draggingCrew: CrewId | null = null;
   let crewMoved = false;
@@ -42,6 +43,7 @@ export function attachTouchCamera({ canvas, camRef, onCamChange, onTap, onCrewPo
       return;
     }
     if (activePointers.size === 2) {
+      if (mode === "crew" && draggingCrew) { onCrewCancel?.(draggingCrew); draggingCrew = null; crewMoved = false; }
       const pts = [...activePointers.values()];
       pinchStartDist = touchDist(pts[0]!, pts[1]!);
       pinchStartZoom = camRef.current.zoom;
