@@ -1,40 +1,43 @@
 import { useEffect, useRef, useState } from "react";
-import { Clapperboard, Film, Library, Megaphone, Pause, TriangleAlert, Users } from "lucide-react";
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
-import { CREW, stateLabel, type CrewId, type MapId } from "@/game/crew";
-import { COFFEE_SPOT, createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
+import { CREW, type CrewId, type MapId } from "@/game/crew";
+import { tintNoraFromGuion } from "@/game/nora-tint";
+import { createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
 import { enhanceSim, type Enhanced } from "@/game/enhance-sim";
+import { createCustomStory, isStoryDefinition, STORY_LIBRARY, type ChallengeStyle, type StoryDefinition, type StoryGenre } from "@/game/stories";
 import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import { SetDirectorPanel } from "@/components/set-director-panel";
 import { createSetDirector, type SetDirector, type SetSnapshot } from "@/game/set-director";
 import { drawScenery, drawTransition } from "@/game/scenery-draw";
-import { createCustomStory, isStoryDefinition, STORY_LIBRARY, type ChallengeStyle, type StoryDefinition, type StoryGenre } from "@/game/stories";
 import { StoryDirector } from "@/components/story-director";
-
-type Screen = "menu" | "stories" | "create" | "playing";
-
-const CUSTOM_STORIES_KEY = "pixel-set-custom-stories-v1";
+import { CommandBar } from "@/components/command-bar";
+import {
+  CAMERA_DEFAULT,
+  drawIsoGrid,
+  resetCamera,
+  worldToScreen,
+  zoomAt,
+  type Camera,
+} from "@/game/camera";
+import { attachMinimapJump, attachTouchCamera, pickCrewAt, screenToWorld } from "@/game/map-view";
 
 const POSES = ["pose-1", "pose-2", "pose-3", "pose-4"] as const;
 const SPRITE_ASSETS = import.meta.glob<string>("../../assets/sprites/*/pose-*.png", {
   eager: true, query: "?url", import: "default",
 });
-const MAP_FILES: Partial<Record<MapId, string>> = {
-  set: "/set/stage.jpg",
-};
+const MAP_FILES: Partial<Record<MapId, string>> = { set: "/set/stage.jpg" };
 
 const INITIAL_LOG: LogLine[] = [
-  { id: -3, who: "Rey", text: "Bienvenidos al set. Hoy la emoción tiene que aguantar la estructura.", kind: "dir" },
-  { id: -2, who: "Sol", text: "Sala de guion lista. Falta decidir qué sabe el espectador.", kind: "ok" },
-  { id: -1, who: "Lila", text: "Tras el corte, llevo la cinta a montaje y edito.", kind: "ok" },
+  { id: -3, who: "Rey", text: "Bienvenidos al set.", kind: "dir" },
+  { id: -2, who: "Sol", text: "Sala de guion lista.", kind: "ok" },
+  { id: -1, who: "Nora", text: "Marketing ya tiene la línea del estudio.", kind: "ok" },
 ];
 
 const INITIAL_HUD: Hud = {
   take: 1, scene: "La traición · Drama", stress: 12, quality: 8,
-  mood: "Sala de guion: escriben y reescriben.", paused: false, timeLeft: 90,
-  objective: "Cerrar el guion antes de bajar al set",
-  stationCount: CREW.length, coffeeCount: 0, manualRescues: 0, rescueGoal: 3,
+  mood: "Sala de guion.", paused: false, timeLeft: 90,
+  objective: "Cerrar el guion", stationCount: CREW.length, coffeeCount: 0, manualRescues: 0, rescueGoal: 3,
   phase: "guion", map: "guion", mapLabel: "Sala de guion", transitioning: false,
   people: CREW.map((c) => ({ id: c.id, name: c.name, role: c.role, state: "work" as const, moving: false })),
   dayGoodTakes: 0, dayTarget: 3, lastStars: 0, totalStars: 0,
@@ -42,57 +45,37 @@ const INITIAL_HUD: Hud = {
   crisis: null, takeResult: null, onMarkReady: false, bonds: [],
 };
 
-function hudNum(v: number | undefined, d = 0) { return typeof v === "number" ? v : d; }
 function assetUrl(path: string) {
   if (typeof window === "undefined") return path;
   const prefix = previewPathPrefix(window.location.hostname, window.location.pathname) ?? "";
   return `${prefix}${path}`;
 }
-function wrap(ctx: CanvasRenderingContext2D, text: string, max: number) {
-  const words = text.split(" "); const lines: string[] = []; let cur = "";
-  for (const word of words) {
-    const next = cur ? `${cur} ${word}` : word;
-    if (ctx.measureText(next).width > max && cur) { lines.push(cur); cur = word; } else cur = next;
-  }
-  if (cur) lines.push(cur);
-  return lines.slice(0, 4);
-}
+
 function poseFor(p: Person, moving: boolean, t: number) {
   if (p.state === "sleep") return "pose-4";
   if (p.state === "angry") return "pose-3";
-  if (p.state === "seated") {
-    const step = Math.floor(t * 5 + p.homeX * 14) % 2;
-    return step === 0 ? "pose-1" : "pose-2";
-  }
   const step = Math.floor(t * (moving ? 8 : 2) + p.homeX * 10) % 2;
-  if (moving) return step === 0 ? "pose-2" : "pose-1";
   return step === 0 ? "pose-1" : "pose-2";
 }
-function drawWorkstationBack(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
-  ctx.fillStyle = "#29231f"; ctx.fillRect(x - size * 0.16, y - size * 0.31, size * 0.32, size * 0.18);
-  ctx.fillStyle = "#51402f"; ctx.fillRect(x - size * 0.29, y - size * 0.43, size * 0.58, size * 0.07);
-  ctx.fillStyle = "#161d20"; ctx.fillRect(x - size * 0.12, y - size * 0.62, size * 0.24, size * 0.18);
-  ctx.fillStyle = "#76a8a2"; ctx.fillRect(x - size * 0.095, y - size * 0.595, size * 0.19, size * 0.125);
-}
-function drawWorkstationFront(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
-  ctx.fillStyle = "#533a2b"; ctx.fillRect(x - size * 0.32, y - size * 0.39, size * 0.64, size * 0.12);
-  ctx.fillStyle = "#a27a50"; ctx.fillRect(x - size * 0.32, y - size * 0.405, size * 0.64, size * 0.035);
-}
-function drawCoffeeCorner(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
-  ctx.fillStyle = "#302720"; ctx.fillRect(x - size * 0.22, y - size * 0.25, size * 0.44, size * 0.22);
-  ctx.fillStyle = "#9a704b"; ctx.fillRect(x - size * 0.24, y - size * 0.27, size * 0.48, size * 0.045);
-  ctx.fillStyle = "#f4ecdf"; ctx.font = "700 10px 'Source Sans 3', sans-serif";
-  ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("CAFÉ", x, y - size * 0.46);
-}
+
+type Screen = "menu" | "stories" | "create" | "playing";
+const CUSTOM_STORIES_KEY = "pixel-set-custom-stories-v1";
 
 export function FilmSet() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const minimapRef = useRef<HTMLCanvasElement>(null);
   const simRef = useRef<Enhanced | null>(null);
   const directorRef = useRef<SetDirector | null>(null);
+  const camRef = useRef<Camera>({ ...CAMERA_DEFAULT });
   const [snap, setSnap] = useState<SetSnapshot | null>(null);
   const [hud, setHud] = useState<Hud>(INITIAL_HUD);
   const [log, setLog] = useState<LogLine[]>(INITIAL_LOG);
   const [ready, setReady] = useState(false);
+  const [activeWindow, setActiveWindow] = useState<"director" | "story" | "advisors" | null>(null);
+  const [selectedId, setSelectedId] = useState<CrewId | null>(null);
+  const selectedRef = useRef<CrewId | null>(null);
+  const [camTick, setCamTick] = useState(0);
+  selectedRef.current = selectedId;
   const gameActiveRef = useRef(false);
   const [screen, setScreen] = useState<Screen>("menu");
   const [customStories, setCustomStories] = useState<StoryDefinition[]>([]);
@@ -114,40 +97,23 @@ export function FilmSet() {
   }, []);
 
   useEffect(() => {
-    const canvas = canvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d"); if (!ctx) return;
-    let audio: AudioContext | null = null;
-    const unlock = () => { if (!audio) audio = new AudioContext(); if (audio.state === "suspended") void audio.resume(); };
-    const blip = (kind: LogLine["kind"]) => {
-      if (!audio || audio.state !== "running") return;
-      const osc = audio.createOscillator(); const gain = audio.createGain();
-      osc.type = kind === "dir" ? "triangle" : "square";
-      osc.frequency.value = kind === "angry" ? 170 : kind === "dir" ? 220 : 460;
-      gain.gain.value = kind === "dir" ? 0.04 : 0.028;
-      osc.connect(gain); gain.connect(audio.destination); osc.start();
-      const stopAt = audio.currentTime + (kind === "dir" ? 0.12 : 0.07);
-      gain.gain.exponentialRampToValueAtTime(0.0001, stopAt); osc.stop(stopAt);
-      if (kind === "dir") {
-        const osc2 = audio.createOscillator(); const g2 = audio.createGain();
-        osc2.type = "square"; osc2.frequency.value = 880;
-        g2.gain.value = 0.03; osc2.connect(g2); g2.connect(audio.destination);
-        const t = audio.currentTime + 0.14;
-        osc2.start(t); g2.gain.setValueAtTime(0.03, t);
-        g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.05); osc2.stop(t + 0.05);
-      }
-    };
-    const raw = createSim((line) => { blip(line.kind); setLog((prev) => [line, ...prev].slice(0, 40)); });
-    const sim = enhanceSim(raw, (line) => { blip(line.kind); setLog((prev) => [line, ...prev].slice(0, 40)); });
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const raw = createSim((line) => setLog((prev) => [line, ...prev].slice(0, 40)));
+    const sim = enhanceSim(raw, (line) => setLog((prev) => [line, ...prev].slice(0, 40)));
     simRef.current = sim;
-    const addLog = (who: string, text: string) => setLog((prev) => [{ id: Date.now() + Math.random(), who, text, kind: "ok" as const }, ...prev].slice(0, 40));
-    const director = createSetDirector(addLog);
+    const director = createSetDirector((who, text) =>
+      setLog((prev) => [{ id: Date.now(), who, text, kind: "ok" as const }, ...prev].slice(0, 40)),
+    );
     directorRef.current = director;
     setSnap(director.snapshot());
-    let lastTake = 1;
 
     const sprites = new Map<string, HTMLImageElement>();
     const maps = new Map<MapId, HTMLImageElement>();
-    // Fondos ilustrados opcionales: public/set/locations/<id>.png (o .jpg). Si no existen, se usa el decorado de código.
+    // Fondos ilustrados opcionales: public/set/locations/<id>.png (o .jpg). Si no existen, decorado de código.
     const locImgs = new Map<string, HTMLImageElement | null>();
     const getBackdrop = (id: string) => {
       if (id === "estudio") return null;
@@ -165,13 +131,17 @@ export function FilmSet() {
       }
       return locImgs.get(id) ?? null;
     };
+    let lastTake = 1;
     let loaded = 0;
     const needed = CREW.length * POSES.length + Object.keys(MAP_FILES).length;
     const mark = () => { loaded += 1; if (loaded >= needed) setReady(true); };
+
     (Object.keys(MAP_FILES) as MapId[]).forEach((id) => {
-      const img = new Image(); img.onload = () => mark(); img.onerror = () => mark();
+      const img = new Image();
+      img.onload = () => mark(); img.onerror = () => mark();
       img.src = assetUrl(MAP_FILES[id]!); maps.set(id, img);
     });
+
     for (const crew of CREW) {
       for (const pose of POSES) {
         const img = new Image();
@@ -183,14 +153,48 @@ export function FilmSet() {
           spritePath = `../../assets/sprites/actores/${pose}.png`;
           spriteSrc = SPRITE_ASSETS[spritePath];
         }
+        if (!spriteSrc && crew.id === "marketing") {
+          spritePath = `../../assets/sprites/guion/${pose}.png`;
+          spriteSrc = SPRITE_ASSETS[spritePath];
+        }
         if (!spriteSrc) { mark(); continue; }
-        img.src = spriteSrc;
+        if (crew.id === "marketing") {
+          const base = new Image();
+          base.onload = () => { img.src = tintNoraFromGuion(base); };
+          base.onerror = () => mark();
+          base.src = spriteSrc;
+        } else img.src = spriteSrc;
       }
     }
 
-    let raf = 0, last = performance.now(), acc = 0, anim = 0, hudTick = 0;
-    let draggedId: CrewId | null = null, dragStartX = 0, dragStartY = 0, dragMoved = false;
-    const layout = { ox: 0, oy: 0, dw: 1, dh: 1 };
+    let raf = 0, last = performance.now(), anim = 0;
+    const bumpCam = () => setCamTick((n) => n + 1);
+
+    const drawMinimap = () => {
+      const mm = minimapRef.current;
+      if (!mm) return;
+      const g = mm.getContext("2d");
+      if (!g) return;
+      const w = mm.width, h = mm.height;
+      g.fillStyle = "#0a0e06"; g.fillRect(0, 0, w, h);
+      g.strokeStyle = "#3d5a1e"; g.strokeRect(0.5, 0.5, w - 1, h - 1);
+      g.strokeStyle = "#1e2e10";
+      for (let i = 0; i <= 8; i++) {
+        g.beginPath(); g.moveTo((i / 8) * w, 0); g.lineTo((i / 8) * w, h); g.stroke();
+        g.beginPath(); g.moveTo(0, (i / 8) * h); g.lineTo(w, (i / 8) * h); g.stroke();
+      }
+      for (const p of sim.people.filter((x) => x.visible !== false)) {
+        g.fillStyle = p.id === "director" ? "#e2b340" : p.id === "marketing" ? "#5ec8c0" : "#9fbf5a";
+        g.fillRect(p.x * w - 2.5, p.y * h - 2.5, 5, 5);
+      }
+      const cam = camRef.current;
+      const vw = Math.min(w, w / cam.zoom) * 0.55;
+      const vh = Math.min(h, h / cam.zoom) * 0.55;
+      const cx = w * 0.5 - cam.panX / (cam.zoom * 8);
+      const cy = h * 0.52 - cam.panY / (cam.zoom * 8);
+      g.strokeStyle = "#e2b340"; g.lineWidth = 1.5;
+      g.strokeRect(cx - vw / 2, cy - vh / 2, vw, vh);
+    };
 
     const draw = () => {
       const rect = canvas.getBoundingClientRect();
@@ -201,136 +205,114 @@ export function FilmSet() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
       const cw = rect.width, ch = rect.height;
-      ctx.fillStyle = "#12100e"; ctx.fillRect(0, 0, cw, ch);
-      const shake = sim.shake;
-      const sx = shake ? (Math.random() - 0.5) * shake * 10 : 0;
-      const sy = shake ? (Math.random() - 0.5) * shake * 6 : 0;
-      ctx.save(); ctx.translate(sx, sy);
+      const cam = camRef.current;
+
+      ctx.fillStyle = "#070906";
+      ctx.fillRect(0, 0, cw, ch);
+      drawIsoGrid(ctx, cam, cw, ch, 12);
+
       const mapId = (sim.map as MapId) || "set";
       const stage = maps.get(mapId);
-      const setStage = maps.get("set");
-      if (mapId === "set") {
-        if (stage && stage.naturalWidth) {
-          const scale = Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);
-          layout.dw = stage.naturalWidth * scale; layout.dh = stage.naturalHeight * scale;
-        } else { layout.dw = cw; layout.dh = ch; }
-        layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
-        drawScenery(ctx, layout.ox, layout.oy, layout.dw, layout.dh, director.snapshot(), anim, stage, getBackdrop(director.snapshot().location.id));
-      } else if (mapId === "guion" || mapId === "montaje") {
-        if (stage && stage.naturalWidth) {
-          const scale = Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);
-          layout.dw = stage.naturalWidth * scale; layout.dh = stage.naturalHeight * scale;
-          layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
-          ctx.drawImage(stage, layout.ox, layout.oy, layout.dw, layout.dh);
-        } else {
-          layout.ox = 0; layout.oy = 0; layout.dw = cw; layout.dh = ch;
-          if (mapId === "guion") drawGuionRoom(ctx, layout.ox, layout.oy, layout.dw, layout.dh);
-          else drawMontajeRoom(ctx, layout.ox, layout.oy, layout.dw, layout.dh);
-        }
-      } else if (setStage && setStage.naturalWidth) {
-        const scale = Math.min(cw / setStage.naturalWidth, ch / setStage.naturalHeight);
-        layout.dw = setStage.naturalWidth * scale; layout.dh = setStage.naturalHeight * scale;
-        layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
-        ctx.drawImage(setStage, layout.ox, layout.oy, layout.dw, layout.dh);
-      } else {
-        layout.ox = 0; layout.oy = 0; layout.dw = cw; layout.dh = ch;
+
+      if (mapId === "set" && stage) {
+        const tl = worldToScreen(0, 0.35, cam, cw, ch);
+        const br = worldToScreen(1, 1, cam, cw, ch);
+        drawScenery(ctx, tl.x, tl.y, Math.max(40, br.x - tl.x), Math.max(40, br.y - tl.y), director.snapshot(), anim, stage, getBackdrop(director.snapshot().location.id));
+      } else if (mapId === "guion") {
+        const tl = worldToScreen(0.05, 0.35, cam, cw, ch);
+        const br = worldToScreen(0.95, 0.95, cam, cw, ch);
+        drawGuionRoom(ctx, tl.x, tl.y, Math.max(40, br.x - tl.x), Math.max(40, br.y - tl.y));
+      } else if (mapId === "montaje") {
+        const tl = worldToScreen(0.05, 0.35, cam, cw, ch);
+        const br = worldToScreen(0.95, 0.95, cam, cw, ch);
+        drawMontajeRoom(ctx, tl.x, tl.y, Math.max(40, br.x - tl.x), Math.max(40, br.y - tl.y));
       }
-      const toX = (nx: number) => layout.ox + nx * layout.dw;
-      const toY = (ny: number) => layout.oy + ny * layout.dh;
-      const size = layout.dh * 0.23;
-      const visible = sim.people.filter((p) => p.visible !== false);
-      for (const person of visible) drawWorkstationBack(ctx, toX(person.homeX), toY(person.homeY), size);
-      drawCoffeeCorner(ctx, toX(COFFEE_SPOT[0]), toY(COFFEE_SPOT[1]), size);
-      const ordered = [...visible].sort((a, b) => a.y - b.y);
+
+      const ordered = [...sim.people.filter((p) => p.visible !== false)].sort((a, b) => a.y - b.y);
       for (const p of ordered) {
-        const x = toX(p.x), y = toY(p.y);
-        const moving = (p.state === "work" || p.state === "coffee" || p.carrying) && Math.hypot(p.tx - p.x, p.ty - p.y) > 0.015;
-        const seated = p.state === "seated"; const bob = p.state === "sleep" ? 0 : seated ? Math.sin(anim * 6 + p.homeX * 20) * 1.6 : Math.sin(anim * 3 + p.homeX * 12); const seatY = seated ? size * 0.07 : 0;
-        ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(x, y, size * 0.22, size * 0.08, 0, 0, Math.PI * 2); ctx.fill();
-        if (p.ring > 0 || p.dragging) { ctx.strokeStyle = "#e2b340"; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y, size * 0.28, size * 0.1, 0, 0, Math.PI * 2); ctx.stroke(); }
+        const scr = worldToScreen(p.x, p.y, cam, cw, ch);
+        const size = (ch * 0.2) * cam.zoom * 0.95;
+        const moving =
+          (p.state === "work" || p.state === "coffee" || p.carrying) &&
+          Math.hypot(p.tx - p.x, p.ty - p.y) > 0.015;
         const frame = sprites.get(`${p.id}:${poseFor(p, moving, anim)}`);
-        if (frame) { ctx.save(); ctx.translate(x, y + bob + seatY); ctx.scale(p.facing * (seated ? 0.92 : 1), seated ? 0.88 : 1); ctx.drawImage(frame, -size / 2, -size, size, size); ctx.restore(); }
-        if (p.carrying) { ctx.fillStyle = "#c8c8d0"; ctx.beginPath(); ctx.arc(x + size * 0.22 * p.facing, y - size * 0.45, size * 0.08, 0, Math.PI * 2); ctx.fill(); }
-        ctx.font = "600 11px 'Source Sans 3', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
-        const label = p.name; const lw = ctx.measureText(label).width + 10;
-        ctx.fillStyle = "rgba(18,16,14,0.78)"; ctx.fillRect(x - lw / 2, y + 4, lw, 15);
-        ctx.fillStyle = p.state === "angry" ? "#d4533c" : p.state === "coffee" ? "#e2b340" : seated ? "#9fd4a8" : "#f4ecdf";
-        ctx.fillText(label, x, y + 6);
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.beginPath();
+        ctx.ellipse(scr.x, scr.y, size * 0.22, size * 0.08, 0, 0, Math.PI * 2);
+        ctx.fill();
+        if (selectedRef.current === p.id || p.ring > 0) {
+          ctx.strokeStyle = "#e2b340";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(scr.x, scr.y, size * 0.28, size * 0.1, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        if (frame) {
+          ctx.save();
+          ctx.translate(scr.x, scr.y);
+          ctx.scale(p.facing, 1);
+          ctx.drawImage(frame, -size / 2, -size, size, size);
+          ctx.restore();
+        }
+        ctx.font = "600 11px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "rgba(0,0,0,0.65)";
+        const lw = ctx.measureText(p.name).width + 8;
+        ctx.fillRect(scr.x - lw / 2, scr.y + 4, lw, 14);
+        ctx.fillStyle = p.id === selectedRef.current ? "#e2b340" : "#f4ecdf";
+        ctx.fillText(p.name, scr.x, scr.y + 14);
       }
-      for (const person of ordered) drawWorkstationFront(ctx, toX(person.homeX), toY(person.homeY), size);
-      for (const particle of sim.particles) {
-        const x = toX(particle.x), y = toY(particle.y);
-        ctx.globalAlpha = Math.max(0, particle.life / particle.max);
-        ctx.fillStyle = particle.kind === "z" ? "#f4ecdf" : particle.kind === "steam" ? "#d4533c" : "#e2b340";
-        if (particle.kind === "z") { ctx.font = "700 13px 'Source Sans 3', sans-serif"; ctx.textAlign = "center"; ctx.fillText(particle.char, x, y); }
-        else ctx.fillRect(x, y, 4, 3);
-        ctx.globalAlpha = 1;
-      }
-      ctx.font = "600 12px 'Source Sans 3', sans-serif";
-      for (const p of visible) {
-        if (!p.bubble) continue;
-        const lines = wrap(ctx, p.bubble.text, 168);
-        const bw = Math.min(190, Math.max(...lines.map((line) => ctx.measureText(line).width)) + 16);
-        const bh = lines.length * 15 + 10;
-        let bx = toX(p.x) - bw / 2, by = toY(p.y) - size - bh - 6;
-        bx = Math.max(layout.ox + 4, Math.min(bx, layout.ox + layout.dw - bw - 4));
-        if (by < layout.oy + 4) by = toY(p.y) + 22;
-        ctx.fillStyle = p.bubble.kind === "angry" ? "#3a1814" : p.bubble.kind === "dir" ? "#2c2414" : "#1c1814";
-        ctx.strokeStyle = p.bubble.kind === "angry" ? "#d4533c" : p.bubble.kind === "dir" ? "#e2b340" : "#6a5c48";
-        ctx.lineWidth = 2; ctx.fillRect(bx, by, bw, bh); ctx.strokeRect(bx, by, bw, bh);
-        ctx.fillStyle = "#f4ecdf"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-        lines.forEach((line, i) => ctx.fillText(line, bx + 8, by + 6 + i * 15));
-      }
-      ctx.restore();
       drawTransition(ctx, cw, ch, director.transition());
+      drawMinimap();
     };
 
-    const frame = (now: number) => {
-      let dt = (now - last) / 1000; last = now; if (dt > 0.1) dt = 0.1;
-      acc += dt; anim += dt;
+    const loop = (now: number) => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now; anim += dt;
       director.step(dt);
-      while (gameActiveRef.current && acc >= 1 / 60) { sim.step(1 / 60); acc -= 1 / 60; }
-      draw(); hudTick += dt;
-      if (hudTick > 0.25) {
-        hudTick = 0; const h = sim.hud(); setHud(h); setSnap(director.snapshot());
-        if (h.take !== lastTake) { lastTake = h.take; if (director.snapshot().autoAdvance) director.nextScene(); }
-      }
-      raf = requestAnimationFrame(frame);
+      if (gameActiveRef.current) sim.step(dt);
+      draw();
+      const h = sim.hud();
+      setHud(h);
+      if (h.take !== lastTake) { lastTake = h.take; if (director.snapshot().autoAdvance) director.nextScene(); }
+      setSnap(director.snapshot());
+      raf = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(frame);
+    raf = requestAnimationFrame(loop);
 
-    const pointerPosition = (event: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      return { nx: (event.clientX - rect.left - layout.ox) / layout.dw, ny: (event.clientY - rect.top - layout.oy) / layout.dh };
+    const detachTouch = attachTouchCamera({
+      canvas,
+      camRef,
+      onCamChange: bumpCam,
+      onTap: (sx, sy, r) => {
+        const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
+        const best = pickCrewAt(sim.people, world.nx, world.ny, 0.08);
+        if (best) {
+          setSelectedId(best);
+          sim.grab(world.nx, world.ny);
+        } else {
+          setSelectedId(null);
+          sim.click(world.nx, world.ny);
+        }
+        const sel = selectedRef.current;
+        if (sel) sim.drop(sel, world.nx, world.ny);
+      },
+    });
+
+    let mmCleanup: (() => void) | null = null;
+    const attachMm = () => {
+      const mm = minimapRef.current;
+      if (!mm || mmCleanup) return;
+      mmCleanup = attachMinimapJump(mm, canvas, camRef, bumpCam);
     };
-    const onPointerDown = (event: PointerEvent) => {
-      unlock(); const { nx, ny } = pointerPosition(event);
-      draggedId = sim.grab(nx, ny);
-      if (draggedId) { dragStartX = nx; dragStartY = ny; dragMoved = false; canvas.setPointerCapture(event.pointerId); }
-      else sim.click(nx, ny);
-    };
-    const onPointerMove = (event: PointerEvent) => {
-      if (!draggedId) return; const { nx, ny } = pointerPosition(event);
-      if (!dragMoved && Math.hypot(nx - dragStartX, ny - dragStartY) > 0.008) dragMoved = true;
-      if (dragMoved) sim.drag(draggedId, nx, ny);
-    };
-    const onPointerUp = (event: PointerEvent) => {
-      if (!draggedId) return; const { nx, ny } = pointerPosition(event);
-      if (dragMoved) sim.drop(draggedId, nx, ny); else { sim.cancelDrag(draggedId); sim.click(nx, ny); }
-      draggedId = null; dragMoved = false; setHud(sim.hud());
-    };
-    canvas.addEventListener("pointerdown", onPointerDown);
-    canvas.addEventListener("pointermove", onPointerMove);
-    canvas.addEventListener("pointerup", onPointerUp);
-    canvas.addEventListener("pointercancel", onPointerUp);
-    window.addEventListener("pointerdown", unlock);
+    attachMm();
+    const mmTimer = window.setTimeout(attachMm, 250);
+
     return () => {
       cancelAnimationFrame(raf);
-      canvas.removeEventListener("pointerdown", onPointerDown);
-      canvas.removeEventListener("pointermove", onPointerMove);
-      canvas.removeEventListener("pointerup", onPointerUp);
-      canvas.removeEventListener("pointercancel", onPointerUp);
-      window.removeEventListener("pointerdown", unlock);
+      window.clearTimeout(mmTimer);
+      detachTouch();
+      mmCleanup?.();
       simRef.current = null; directorRef.current = null;
     };
   }, []);
@@ -375,13 +357,46 @@ export function FilmSet() {
     setScreen("menu");
   };
 
-  const run = (fn: (sim: Enhanced) => void) => { const sim = simRef.current; if (!sim) return; fn(sim); setHud(sim.hud()); };
-  const btn = "inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-semibold text-fg hover:border-primary hover:text-primary";
+  const run = (fn: (sim: Enhanced) => void) => {
+    const sim = simRef.current;
+    if (!sim) return;
+    fn(sim);
+    setHud(sim.hud());
+  };
+
+  const onAction = (action: "pause" | "coffee" | "resetCam" | "zoomIn" | "zoomOut") => {
+    if (action === "resetCam") {
+      camRef.current = resetCamera();
+      setCamTick((n) => n + 1);
+      return;
+    }
+    if (action === "zoomIn" || action === "zoomOut") {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const r = canvas.getBoundingClientRect();
+      camRef.current = zoomAt(
+        camRef.current,
+        action === "zoomIn" ? 1.15 : 0.87,
+        r.width / 2, r.height / 2, r.width, r.height,
+      );
+      setCamTick((n) => n + 1);
+      return;
+    }
+    run((sim) => {
+      if (action === "pause") {
+        if (sim.hud().paused) sim.accion();
+        else sim.corten();
+      }
+      if (action === "coffee") sim.coordinate();
+    });
+  };
+
+  void camTick;
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-3 px-3 py-3">
+    <main className="studio-game relative h-[100dvh] min-h-[480px] w-full overflow-hidden bg-[#070906] text-fg">
       {screen !== "playing" && (
-        <section className="min-h-[calc(100vh-1.5rem)] rounded-lg border border-border bg-surface p-4 sm:p-7">
+        <div className="absolute inset-0 z-50 overflow-y-auto bg-bg p-3"><section className="min-h-[calc(100dvh-1.5rem)] rounded-lg border border-border bg-surface p-4 sm:p-7">
           <header className="mb-8 flex items-center justify-between gap-3 border-b border-border pb-4">
             <div>
               <p className="text-xs font-bold tracking-[0.28em] text-primary">ESTUDIO INDEPENDIENTE</p>
@@ -472,20 +487,15 @@ export function FilmSet() {
               </div>
             </div>
           )}
-        </section>
+        </section></div>
       )}
-      <div className={screen === "playing" ? "flex flex-col gap-3" : "hidden"}>
-      <header className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <p className="text-xs font-semibold tracking-[0.22em] text-primary">SET DE RODAJE</p>
-          <h1 className="font-display text-3xl leading-none text-fg">Pixel Set</h1>
-          <p className="mt-1 text-sm text-muted">Guion → set → ¡corte! → cinta a montaje.</p>
-        </div>
-        <div className="flex items-center gap-3"><p className="max-w-xs text-sm text-fg">{hud.mood}</p><button type="button" onClick={openMenu} className="rounded border border-border px-3 py-2 text-[10px] font-bold tracking-widest text-muted hover:border-primary hover:text-fg">MENÚ</button></div>
-      </header>
-      <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border bg-bg">
-        <canvas ref={canvasRef} className="h-full w-full touch-none cursor-grab active:cursor-grabbing" aria-label="Pixel Set" />
-        {!ready && <p className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted">Preparando el set…</p>}
+      <div className="absolute inset-0 bottom-[110px] sm:bottom-[128px]">
+        <canvas
+          ref={canvasRef}
+          className="h-full w-full cursor-crosshair"
+          style={{ touchAction: "none" }}
+          aria-label="Mapa del set"
+        />
         {(hud.campaignComplete || hud.gameOver) && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 p-4">
             <div className="w-full max-w-md rounded-lg border border-primary/50 bg-surface p-5 text-center shadow-2xl">
@@ -500,49 +510,37 @@ export function FilmSet() {
             </div>
           </div>
         )}
-        {hud.phase === "rolling" && !hud.crisis && (
-          <div className="pointer-events-none absolute left-3 top-3 rounded bg-danger/90 px-2 py-1 text-xs font-bold tracking-widest text-white">● REC</div>
-        )}
-        {hud.onMarkReady && hud.phase === "prep" && (
-          <div className="pointer-events-none absolute right-3 top-3 rounded bg-primary/90 px-2 py-1 text-xs font-bold text-bg">MARCA LISTA</div>
+        {!ready && (
+          <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/40 text-sm text-muted">
+            Preparando el set…
+          </div>
         )}
       </div>
-      <section className="grid gap-3 rounded-md border border-primary/40 bg-surface p-3 sm:grid-cols-[1fr_auto_auto]">
-        <div>
-          <p className="text-xs font-bold tracking-[0.16em] text-primary">
-            MISIÓN · TOMA {hud.take} · {hud.mapLabel.toUpperCase()} · {(snap?.genre ?? hud.genre ?? "Drama").toUpperCase()}
-          </p>
-          <p className="mt-1 text-sm font-semibold text-fg">{hud.objective}</p>
-          {hud.storyTitle && <p className="mt-1 text-xs text-primary">{hud.storyTitle} · Capítulo {hud.chapterIndex}/{hud.chapterCount}: {hud.chapterTitle} · ♥ {hud.lives}</p>}
-          {hud.chapterBriefing && <p className="mt-1 text-xs text-muted">{hud.chapterBriefing}</p>}
-          <p className="mt-1 text-xs text-muted">
-            Día: {hudNum(hud.dayGoodTakes)}/{hudNum(hud.dayTarget, 3)} tomas buenas · ★ total {hudNum(hud.totalStars)}
-            {hud.onMarkReady ? " · ✓ Equipo en marca" : ""}
-          </p>
-        </div>
-        <div className="min-w-24 self-center rounded-md bg-bg px-4 py-2 text-center">
-          <p className="text-[10px] font-bold tracking-widest text-muted">CALIDAD</p>
-          <p className="font-display text-2xl tabular-nums text-primary">{hud.quality}</p>
-        </div>
-        <div className="min-w-24 self-center rounded-md bg-bg px-4 py-2 text-center">
-          <p className="text-[10px] font-bold tracking-widest text-muted">TIEMPO</p>
-          <p className={`font-display text-2xl tabular-nums ${hud.timeLeft <= 20 ? "text-danger" : "text-primary"}`}>
-            {Math.floor(hud.timeLeft / 60)}:{String(hud.timeLeft % 60).padStart(2, "0")}
-          </p>
-        </div>
-      </section>
 
-      {(hud.bonds?.length ?? 0) > 0 && (
-        <div className="flex flex-wrap gap-2 text-xs">
-          {(hud.bonds ?? []).map((b) => (
-            <span key={b.label} className="rounded-md border border-border bg-surface px-2 py-1 text-muted">
-              {b.label}: <span className={b.level >= 60 ? "text-primary" : b.level < 40 ? "text-danger" : "text-fg"}>{b.level}</span>
-            </span>
-          ))}
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 bg-gradient-to-b from-black/80 via-black/30 to-transparent px-3 pb-8 pt-3 sm:px-5">
+        <div>
+          <p className="text-[10px] font-bold tracking-[0.22em] text-[#9fbf5a]">PIXEL SET · COMMAND CENTER</p>
+          <h1 className="font-display text-xl text-white drop-shadow sm:text-3xl">Estudio en vivo</h1>
+          <p className="text-xs text-white/70">{hud.mood}</p>
+          {hud.storyTitle && <p className="text-[11px] text-[#9fbf5a]">{hud.storyTitle} · Cap. {hud.chapterIndex}/{hud.chapterCount}: {hud.chapterTitle} · ♥ {hud.lives}</p>}
         </div>
-      )}
+        <div className="pointer-events-auto flex items-center gap-2"><button type="button" onClick={openMenu} className="rounded border border-[#4a6b28] bg-[#0a0e06]/90 px-2 py-1 text-[10px] font-bold text-[#9fbf5a]">MENÚ</button><div className="rounded border border-[#4a6b28] bg-[#0a0e06]/90 px-2 py-1 text-[10px] text-[#9fbf5a]">
+          ZOOM {(camRef.current.zoom * 100) | 0}%
+        </div></div>
+      </header>
+
+      <CommandBar
+        hud={hud}
+        log={log}
+        selectedId={selectedId}
+        activePanel={activeWindow}
+        onSelectPanel={setActiveWindow}
+        onAction={onAction}
+        minimapRef={minimapRef}
+      />
 
       {hud.crisis && (
+        <div className="absolute inset-0 z-40 flex items-end justify-center bg-black/60 p-3 pb-[120px] sm:items-center sm:pb-3"><div className="w-full max-w-xl">
         <div className="rounded-md border-2 border-danger bg-surface p-4 shadow-lg">
           <p className="text-xs font-bold tracking-widest text-danger">CRISIS EN SET</p>
           <h2 className="mt-1 font-display text-xl text-fg">{hud.crisis.title}</h2>
@@ -558,9 +556,11 @@ export function FilmSet() {
             </button>
           </div>
         </div>
+      </div></div>
       )}
 
-      {hud.takeResult && (
+      {hud.takeResult && !hud.crisis && (
+        <div className="absolute inset-0 z-40 flex items-end justify-center bg-black/60 p-3 pb-[120px] sm:items-center sm:pb-3"><div className="w-full max-w-xl">
         <div className="rounded-md border-2 border-primary bg-surface p-4">
           <p className="text-xs font-bold tracking-widest text-primary">PLAYBACK DE LA TOMA</p>
           <p className="mt-2 font-display text-3xl text-fg">
@@ -579,47 +579,44 @@ export function FilmSet() {
             Continuar
           </button>
         </div>
+      </div></div>
       )}
 
-      <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Mapas">
-        <button type="button" onClick={() => run((s) => s.goMap("guion"))} className={`${btn} ${hud.map === "guion" ? "border-primary text-primary" : ""}`}>
-          <Library className="size-4" /> Guion
-        </button>
-        <button type="button" onClick={() => run((s) => s.goMap("set"))} className={`${btn} ${hud.map === "set" ? "border-primary text-primary" : ""}`}>
-          <Clapperboard className="size-4" /> Set
-        </button>
-        <button type="button" onClick={() => run((s) => s.goMap("montaje"))} className={`${btn} ${hud.map === "montaje" ? "border-primary text-primary" : ""}`}>
-          <Film className="size-4" /> Montaje
-        </button>
-      </div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {hud.people.map((p) => (
-          <button key={p.id} type="button" onClick={() => run((sim) => sim.focus(p.id))} className="min-h-11 shrink-0 rounded-md border border-border bg-surface px-3 py-1.5 text-left">
-            <span className="block text-sm font-semibold text-fg">{p.name}</span>
-            <span className="block text-xs text-primary">{p.role} · {stateLabel(p.state, p.moving)}</span>
-          </button>
-        ))}
-      </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <button type="button" onClick={() => run((sim) => sim.accion())} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-primary bg-primary px-3 text-sm font-semibold text-bg">
-          <Clapperboard className="size-4" /> ¡Acción!
-        </button>
-        <button type="button" onClick={() => run((sim) => sim.scold())} className={btn}><Megaphone className="size-4" /> Rey reta</button>
-        <button type="button" onClick={() => run((sim) => sim.chaos())} className={btn}><TriangleAlert className="size-4" /> Problema</button>
-        <button type="button" onClick={() => run((sim) => sim.coordinate())} className={btn}><Users className="size-4" /> Coordinar</button>
-        <button type="button" onClick={() => run((sim) => sim.corten())} className={btn}><Pause className="size-4" /> ¡Corten!</button>
-      </div>
-      <div className="h-36 overflow-y-auto rounded-md border border-border bg-surface p-3 text-sm">
-        {log.map((line) => (
-          <p key={line.id} className="mb-1">
-            <span className={line.kind === "angry" ? "font-semibold text-danger" : line.kind === "dir" ? "font-semibold text-primary" : "font-semibold text-fg"}>{line.who}:</span>{" "}{line.text}
-          </p>
-        ))}
-      </div>
-      {snap && directorRef.current && <SetDirectorPanel snap={snap} director={directorRef.current} />}
-      <StoryDirector onDecision={(choice) => run((sim) => sim.storyDecision(choice.consequence, choice.effects.quality ?? 0, choice.effects.tension ?? 0, choice.effects.morale ?? 0))} />
-      <AdvisorPanel />
-      </div>
+      {activeWindow && (
+        <div
+          className="absolute inset-0 z-30 flex items-end justify-center bg-black/55 p-3 pb-[120px] sm:items-center sm:pb-3"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setActiveWindow(null); }}
+        >
+          <section className="flex max-h-[calc(100dvh-140px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-[#4a6b28] bg-[#12180c]/98 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#3d5a1e] px-4 py-3">
+              <h2 className="font-display text-lg text-white">
+                {activeWindow === "director" ? "Puesta en escena" : activeWindow === "story" ? "Director narrativo" : "Estudio y asesores"}
+              </h2>
+              <button type="button" onClick={() => setActiveWindow(null)} className="sc-btn px-3 py-1 text-sm">×</button>
+            </div>
+            <div className="min-h-0 overflow-y-auto p-3 sm:p-5">
+              {activeWindow === "director" && snap && directorRef.current && (
+                <SetDirectorPanel snap={snap} director={directorRef.current} />
+              )}
+              {activeWindow === "story" && (
+                <StoryDirector
+                  onDecision={(choice) =>
+                    run((sim) =>
+                      sim.storyDecision(
+                        choice.consequence,
+                        choice.effects.quality ?? 0,
+                        choice.effects.tension ?? 0,
+                        choice.effects.morale ?? 0,
+                      ),
+                    )
+                  }
+                />
+              )}
+              {activeWindow === "advisors" && <AdvisorPanel />}
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

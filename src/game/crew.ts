@@ -7,7 +7,8 @@ export type CrewId =
   | "montaje"
   | "produccion"
   | "actores"
-  | "maquillaje";
+  | "maquillaje"
+  | "marketing";
 
 export type Mood = "work" | "angry" | "sleep" | "talk" | "coffee" | "seated";
 
@@ -114,6 +115,15 @@ export const CREW: CrewDef[] = [
     job: "Retoco el rostro. Que la luz no delate el maquillaje.",
     homeMap: "set",
   },
+  {
+    id: "marketing",
+    name: "Nora",
+    role: "Dir. estudio / Marketing",
+    homeX: 0.7,
+    homeY: 0.64,
+    job: "El CEO y mercadeo ya eligieron la línea. Desarrollen eso.",
+    homeMap: "guion",
+  },
 ];
 
 /** Station anchors per map (normalized 0–1). */
@@ -121,14 +131,13 @@ export const STATIONS: Record<
   MapId,
   Partial<Record<CrewId, { x: number; y: number; seated?: boolean }>>
 > = {
-  // Desk rooms: everyone stationed here works seated at desks
   guion: {
     guion: { x: 0.32, y: 0.62, seated: true },
     produccion: { x: 0.48, y: 0.64, seated: true },
     director: { x: 0.62, y: 0.6, seated: true },
+    marketing: { x: 0.78, y: 0.58, seated: true },
   },
   set: {
-    // Director chair + standing work stations with work loop
     director: { x: 0.18, y: 0.78, seated: true },
     camara: { x: 0.4, y: 0.55, seated: true },
     luz: { x: 0.62, y: 0.52, seated: true },
@@ -145,18 +154,12 @@ export const STATIONS: Record<
   },
 };
 
-/**
- * Door / hallway entrance per map (normalized).
- * Aligned to the stone arch on the set floor plan (bottom-right).
- * Guion and montaje draw the same arch so walk-in/out matches.
- */
 export const DOOR: Record<MapId, { x: number; y: number }> = {
   set: { x: 0.88, y: 0.9 },
   guion: { x: 0.88, y: 0.9 },
   montaje: { x: 0.88, y: 0.9 },
 };
 
-/** Point just inside the room from the door (where characters land after entering). */
 export const DOOR_IN: Record<MapId, { x: number; y: number }> = {
   set: { x: 0.78, y: 0.82 },
   guion: { x: 0.78, y: 0.82 },
@@ -192,6 +195,7 @@ export const COMPLAINTS: Record<Exclude<CrewId, "director">, string> = {
   montaje: "Cortaste antes del gesto. Se pierde la emoción.",
   produccion: "Se nos va el día. Organizá el cambio de set.",
   actores: "Más intención. El personaje quiere algo: mostralo.",
+  marketing: "Sin una línea de estudio clara no hay campaña ni póster.",
   maquillaje: "El brillo en la frente arruina el close-up. Retoco ya.",
 };
 
@@ -204,70 +208,35 @@ export const ISSUES: Record<Exclude<CrewId, "director">, string> = {
   produccion: "Se retrasó el permiso de esta locación.",
   actores: "Perdí el hilo emocional del personaje.",
   maquillaje: "Se corrió el maquillaje con el calor de las luces.",
+  marketing: "El CEO cambió la línea editorial a mitad de desarrollo.",
 };
 
 export const ANGRY_REPLIES = [
-  "¡Está bien! Lo corrijo ya.",
-  "No me apures, lo estoy resolviendo.",
-  "¡No es tan fácil como parece!",
-  "Uf… está bien. Vuelvo a trabajar.",
+  "Entendido. Lo corregimos en la próxima.",
+  "Dale, priorizamos eso ahora.",
+  "Tenés razón. Ajustamos.",
+  "Ok. Vamos de nuevo con foco.",
 ];
 
 export const FIXED_REPLIES = [
-  "Listo, ya está resuelto.",
-  "Volví al trabajo.",
-  "Quedó corregido.",
-  "Sigo con esto.",
+  "Listo, gracias.",
+  "Así sí.",
+  "Mucho mejor.",
+  "Seguimos.",
 ];
 
 export const CHATS: Array<{ a: CrewId; b: CrewId; line: string; reply: string }> = [
   {
-    a: "guion",
-    b: "camara",
-    line: "El plano tiene que revelar el secreto justo acá.",
-    reply: "Entonces lo dejo en el eje hasta el gesto.",
+    a: "director",
+    b: "guion",
+    line: "¿El personaje sabe lo que quiere en esta escena?",
+    reply: "Sí: quiere la verdad, aunque duela.",
   },
   {
     a: "camara",
     b: "luz",
-    line: "Necesito más contraste del lado izquierdo.",
-    reply: "Te bajo la contra y subo la key.",
-  },
-  {
-    a: "sonido",
-    b: "produccion",
-    line: "Para esta toma necesito silencio absoluto.",
-    reply: "Cierro el set. Nadie entra.",
-  },
-  {
-    a: "montaje",
-    b: "guion",
-    line: "Si sacamos esta réplica, el arco queda más claro.",
-    reply: "Dale, pero no perdamos el objetivo.",
-  },
-  {
-    a: "actores",
-    b: "director",
-    line: "¿Mi personaje ya sabe que la traicionaron?",
-    reply: "Todavía no. Duda, no llanto.",
-  },
-  {
-    a: "produccion",
-    b: "director",
-    line: "Si repetimos mucho, perdemos la luz del ventanal.",
-    reply: "Entonces esta es la buena. Concentración.",
-  },
-  {
-    a: "luz",
-    b: "camara",
-    line: "La key está lista. No me muevan el trípode.",
-    reply: "No lo toco. Sólo ajusto el foco.",
-  },
-  {
-    a: "director",
-    b: "actores",
-    line: "Menos explicación y más deseo.",
-    reply: "Lo busco desde el cuerpo, no desde el texto.",
+    line: "¿Podemos bajar un poco la key para el close?",
+    reply: "Bajo un punto y abro el fill.",
   },
   {
     a: "sonido",
@@ -292,6 +261,18 @@ export const CHATS: Array<{ a: CrewId; b: CrewId; line: string; reply: string }>
     b: "luz",
     line: "Con esa key se ve demasiado el corrector.",
     reply: "Bajo un punto y difundo el brillo.",
+  },
+  {
+    a: "marketing",
+    b: "guion",
+    line: "El estudio necesita un logline claro antes del lunes.",
+    reply: "Te lo cierro cuando aprueben el giro de la escena 3.",
+  },
+  {
+    a: "marketing",
+    b: "produccion",
+    line: "Si sube el presupuesto, marketing exige un gancho de afiche.",
+    reply: "Anoto. Nada de locaciones extra sin ese gancho.",
   },
 ];
 
