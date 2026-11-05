@@ -547,6 +547,34 @@ export function createSim(onLog: (line: LogLine) => void) {
     } else say(p, "¡Vuelvo a mi estación!", "ok");
   }
 
+  /** Órdenes directas a un integrante (menú de acciones estilo RTS). */
+  type CrewCommand = "station" | "coffee" | "scold" | "praise" | "wake";
+  function commandCrew(id: CrewId, cmd: CrewCommand) {
+    if (transition) return;
+    const p = byId(id);
+    if (!p.visible) return;
+    const director = byId("director");
+    p.ring = 2.2; p.dragging = false;
+    if (pending && (pending.a === p.id || pending.b === p.id)) cancelChat();
+    if (cmd === "station") {
+      release(p); p.cooldown = 8;
+      say(p, "Voy a mi puesto.", "ok");
+    } else if (cmd === "coffee") {
+      p.state = "coffee"; p.stateTimer = 6; p.boredom = 0; p.partner = null;
+      p.tx = COFFEE_SPOT[0]; p.ty = COFFEE_SPOT[1];
+      stress = clamp(stress - 4, 0, 100);
+      say(p, "Cinco minutos de café.", "ok");
+    } else if (cmd === "wake") {
+      if (p.state === "sleep") { release(p); p.cooldown = 10; say(p, "¡Estoy despierto!", "ok"); }
+      else say(p, "Estoy despierto, jefe.", "ok");
+    } else if (cmd === "praise") {
+      quality = clamp(quality + 3, 0, 100); stress = clamp(stress - 3, 0, 100);
+      say(director, `Buen trabajo, ${p.name}.`, "dir"); say(p, "Gracias, jefe.", "ok");
+    } else if (cmd === "scold") {
+      if (p.id !== "director") scold(p, p.state === "sleep" ? "sleep" : "work");
+    }
+  }
+
   function focus(id: CrewId) {
     const p = byId(id);
     if (!p.visible) return;
@@ -625,7 +653,7 @@ export function createSim(onLog: (line: LogLine) => void) {
 
   return {
     people, particles, step, accion, coordinate, scold: scoldRandom, chaos, corten,
-    click, grab, drag, drop, cancelDrag, focus, goMap, hud, storyDecision,
+    click, grab, drag, drop, cancelDrag, focus, commandCrew, goMap, hud, storyDecision,
     resolveCrisis, dismissTakeResult,
     get shake() { return shake; }, get map() { return map; }, get phase() { return phase; },
   };

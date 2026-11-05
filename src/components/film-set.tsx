@@ -8,11 +8,13 @@ import { enhanceSim, type Enhanced } from "@/game/enhance-sim";
 import { createCustomStory, isStoryDefinition, STORY_LIBRARY, type ChallengeStyle, type StoryDefinition, type StoryGenre } from "@/game/stories";
 import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
 import { AdvisorPanel } from "@/components/advisor-panel";
-import { SetDirectorPanel } from "@/components/set-director-panel";
+import { GameMenus } from "@/components/game-menus";
+import { CrewRoster } from "@/components/crew-roster";
+import { useRoute } from "@/game/use-route";
 import { createSetDirector, type SetDirector, type SetSnapshot } from "@/game/set-director";
 import { GENRE_ID, drawScenery, drawTransition } from "@/game/scenery-draw";
 import { StoryDirector } from "@/components/story-director";
-import { CommandBar } from "@/components/command-bar";
+import { CommandBar, type CrewCommandId, type GeneralActionId } from "@/components/command-bar";
 import {
   CAMERA_DEFAULT,
   drawIsoGrid,
@@ -20,6 +22,7 @@ import {
   worldToScreen,
   zoomAt,
   type Camera,
+  focusWorld,
 } from "@/game/camera";
 import { attachMinimapJump, attachTouchCamera, pickCrewAt, screenToWorld } from "@/game/map-view";
 
@@ -27,6 +30,11 @@ const POSES = ["pose-1", "pose-2", "pose-3", "pose-4"] as const;
 const SPRITE_ASSETS = import.meta.glob<string>("../../assets/sprites/*/pose-*.png", {
   eager: true, query: "?url", import: "default",
 });
+
+/** Retratos de los iconos de equipo (pose 1 de cada rol; Nora usa un inicial). */
+const PORTRAITS: Partial<Record<CrewId, string>> = Object.fromEntries(
+  CREW.map((c) => [c.id, SPRITE_ASSETS[`../../assets/sprites/${c.id}/pose-1.png`] ?? (c.id === "maquillaje" ? SPRITE_ASSETS["../../assets/sprites/actores/pose-1.png"] : undefined)]).filter(([, v]) => !!v),
+);
 const MAP_FILES: Partial<Record<MapId, string>> = { set: "/set/stage.jpg" };
 
 const INITIAL_LOG: LogLine[] = [
@@ -72,13 +80,22 @@ export function FilmSet() {
   const [hud, setHud] = useState<Hud>(INITIAL_HUD);
   const [log, setLog] = useState<LogLine[]>(INITIAL_LOG);
   const [ready, setReady] = useState(false);
-  const [activeWindow, setActiveWindow] = useState<"director" | "story" | "advisors" | null>(null);
+  const { route, push: routePush, back: routeBack, forward: routeForward } = useRoute(["menu"]);
+  const playing = route[0] === "play";
+  const gamePath = playing ? route.slice(1) : [];
+  const screen: Screen = playing ? "playing" : ((route[1] as Screen | undefined) ?? "menu");
+  const setScreen = (next: Screen) => {
+    if (next === "playing") routePush(["play"]);
+    else if (next === "menu") { if (route[0] === "menu" && route.length > 1) routeBack(); else routePush(["menu"]); }
+    else routePush(["menu", next]);
+  };
   const [selectedId, setSelectedId] = useState<CrewId | null>(null);
   const selectedRef = useRef<CrewId | null>(null);
   const [camTick, setCamTick] = useState(0);
   selectedRef.current = selectedId;
   const gameActiveRef = useRef(false);
-  const [screen, setScreen] = useState<Screen>("menu");
+  // El juego corre sólo en pantalla de juego y sin menús abiertos.
+  gameActiveRef.current = playing && gamePath.length === 0;
   const [customStories, setCustomStories] = useState<StoryDefinition[]>([]);
   const [selectedStoryId, setSelectedStoryId] = useState(STORY_LIBRARY[0]!.id);
   const [customTitle, setCustomTitle] = useState("");
@@ -328,7 +345,6 @@ export function FilmSet() {
   const startStory = (story: StoryDefinition = selectedStory) => {
     const sim = simRef.current;
     if (!sim) return;
-    gameActiveRef.current = true;
     setLog([]);
     sim.startStory(story);
     setHud(sim.hud());
@@ -358,8 +374,7 @@ export function FilmSet() {
   };
 
   const openMenu = () => {
-    gameActiveRef.current = false;
-    setScreen("menu");
+    routePush(["menu"]);
   };
 
   const run = (fn: (sim: Enhanced) => void) => {
@@ -369,37 +384,47 @@ export function FilmSet() {
     setHud(sim.hud());
   };
 
-  const onAction = (action: "pause" | "coffee" | "resetCam" | "zoomIn" | "zoomOut") => {
-    if (action === "resetCam") {
-      camRef.current = resetCamera();
-      setCamTick((n) => n + 1);
-      return;
-    }
-    if (action === "zoomIn" || action === "zoomOut") {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const r = canvas.getBoundingClientRect();
-      camRef.current = zoomAt(
-        camRef.current,
-        action === "zoomIn" ? 1.15 : 0.87,
-        r.width / 2, r.height / 2, r.width, r.height,
-      );
-      setCamTick((n) => n + 1);
-      return;
-    }
+  const zoom = (dir: "in" | "out" | "reset") => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (dir === "reset") { camRef.current = resetCamera(); setCamTick((n) => n + 1); return; }
+    const r = canvas.getBoundingClientRect();
+    camRef.current = zoomAt(camRef.current, dir === "in" ? 1.15 : 0.87, r.width / 2, r.height / 2, r.width, r.height);
+    setCamTick((n) => n + 1);
+  };
+  const centerOn = (id: CrewId) => {
+    const canvas = canvasRef.current; const sim = simRef.current;
+    const person = sim?.people.find((p) => p.id === id);
+    if (!canvas || !person) return;
+    const r = canvas.getBoundingClientRect();
+    camRef.current = focusWorld(camRef.current, person.x, person.y, r.width, r.height);
+    setCamTick((n) => n + 1);
+  };
+  const selectCrew = (id: CrewId) => { setSelectedId(id); centerOn(id); };
+  const onCrewCommand = (cmd: CrewCommandId) => {
+    if (cmd === "deselect") { setSelectedId(null); return; }
+    if (!selectedId) return;
+    if (cmd === "center") { centerOn(selectedId); return; }
+    run((sim) => sim.commandCrew(selectedId, cmd));
+  };
+  const onGeneral = (action: GeneralActionId) => {
+    if (action === "center") { zoom("reset"); return; }
+    if (action === "scene") { routePush(["play", "scene"]); return; }
+    if (action === "story") { routePush(["play", "story"]); return; }
+    if (action === "studio") { routePush(["play", "studio"]); return; }
+    if (action === "options") { routePush(["play", "opts"]); return; }
     run((sim) => {
-      if (action === "pause") {
-        if (sim.hud().paused) sim.accion();
-        else sim.corten();
-      }
-      if (action === "coffee") sim.coordinate();
+      if (action === "action") sim.accion();
+      else if (action === "cut") sim.corten();
+      else if (action === "team") sim.coordinate();
+      else if (action === "pause") { if (sim.hud().paused) sim.accion(); else sim.corten(); }
     });
   };
 
   void camTick;
 
   return (
-    <main className="studio-game relative h-[100dvh] min-h-[480px] w-full overflow-hidden bg-[#070906] text-fg">
+    <main className="studio-game relative h-[100dvh] min-h-[480px] w-full overflow-hidden bg-[#070906] text-fg" style={{ ["--bar-h" as string]: "178px" }}>
       {screen !== "playing" && (
         <div className="absolute inset-0 z-50 overflow-y-auto bg-bg p-3"><section className="min-h-[calc(100dvh-1.5rem)] rounded-lg border border-border bg-surface p-4 sm:p-7">
           <header className="mb-8 flex items-center justify-between gap-3 border-b border-border pb-4">
@@ -494,7 +519,7 @@ export function FilmSet() {
           )}
         </section></div>
       )}
-      <div className="absolute inset-0 bottom-[110px] sm:bottom-[128px]">
+      <div className="absolute inset-0 bottom-[var(--bar-h)]">
         <canvas
           ref={canvasRef}
           className="h-full w-full cursor-crosshair"
@@ -509,7 +534,7 @@ export function FilmSet() {
               <p className="mt-3 text-sm leading-5 text-muted">{hud.campaignComplete ? `Terminaste "${hud.storyTitle}". El equipo consiguió cerrar la historia.` : hud.gameOver ? "El equipo agotó sus tres intentos. Podés probar otra campaña o diseñar una nueva." : `No se cumplió el objetivo de "${hud.chapterTitle}". Todavía quedan ${hud.lives} intentos.`}</p>
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 
-                <button type="button" onClick={() => { gameActiveRef.current = false; setScreen("stories"); }} className="min-h-11 rounded border border-border px-4 text-xs font-bold text-fg">ELEGIR OTRA HISTORIA</button>
+                <button type="button" onClick={() => setScreen("stories")} className="min-h-11 rounded border border-border px-4 text-xs font-bold text-fg">ELEGIR OTRA HISTORIA</button>
                 <button type="button" onClick={openMenu} className="min-h-11 rounded border border-border px-4 text-xs font-bold text-fg">MENÚ PRINCIPAL</button>
               </div>
             </div>
@@ -534,13 +559,15 @@ export function FilmSet() {
         </div></div>
       </header>
 
+      <CrewRoster people={hud.people} selectedId={selectedId} portraits={PORTRAITS} onSelect={selectCrew} onOptions={() => routePush(["play", "opts"])} />
+
       <CommandBar
         hud={hud}
         log={log}
         selectedId={selectedId}
-        activePanel={activeWindow}
-        onSelectPanel={setActiveWindow}
-        onAction={onAction}
+        onCrewCommand={onCrewCommand}
+        onGeneral={onGeneral}
+        onZoom={zoom}
         minimapRef={minimapRef}
       />
 
@@ -587,40 +614,16 @@ export function FilmSet() {
       </div></div>
       )}
 
-      {activeWindow && (
-        <div
-          className="absolute inset-0 z-30 flex items-end justify-center bg-black/55 p-3 pb-[120px] sm:items-center sm:pb-3"
-          onMouseDown={(e) => { if (e.target === e.currentTarget) setActiveWindow(null); }}
-        >
-          <section className="flex max-h-[calc(100dvh-140px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-[#4a6b28] bg-[#12180c]/98 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#3d5a1e] px-4 py-3">
-              <h2 className="font-display text-lg text-white">
-                {activeWindow === "director" ? "Puesta en escena" : activeWindow === "story" ? "Director narrativo" : "Estudio y asesores"}
-              </h2>
-              <button type="button" onClick={() => setActiveWindow(null)} className="sc-btn px-3 py-1 text-sm">×</button>
-            </div>
-            <div className="min-h-0 overflow-y-auto p-3 sm:p-5">
-              {activeWindow === "director" && snap && directorRef.current && (
-                <SetDirectorPanel snap={snap} director={directorRef.current} />
-              )}
-              {activeWindow === "story" && (
-                <StoryDirector
-                  onDecision={(choice) =>
-                    run((sim) =>
-                      sim.storyDecision(
-                        choice.consequence,
-                        choice.effects.quality ?? 0,
-                        choice.effects.tension ?? 0,
-                        choice.effects.morale ?? 0,
-                      ),
-                    )
-                  }
-                />
-              )}
-              {activeWindow === "advisors" && <AdvisorPanel />}
-            </div>
-          </section>
-        </div>
+      {playing && gamePath.length > 0 && (
+        <GameMenus
+          path={gamePath}
+          snap={snap}
+          director={directorRef.current}
+          nav={{ back: routeBack, forward: routeForward, push: routePush }}
+          onClose={() => routePush(["play"])}
+          onMainMenu={() => routePush(["menu"])}
+          onStoryDecision={(choice) => run((sim) => sim.storyDecision(choice.consequence, choice.effects.quality ?? 0, choice.effects.tension ?? 0, choice.effects.morale ?? 0))}
+        />
       )}
     </main>
   );
