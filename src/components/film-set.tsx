@@ -6,14 +6,17 @@ import { COFFEE_SPOT, createSim, type Hud, type LogLine, type Person, type Sim }
 import { enhanceSim } from "@/game/enhance-sim";
 import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
 import { AdvisorPanel } from "@/components/advisor-panel";
+import { SetDirectorPanel } from "@/components/set-director-panel";
+import { createSetDirector, type SetDirector, type SetSnapshot } from "@/game/set-director";
+import { drawScenery, drawTransition } from "@/game/scenery-draw";
 import { StoryDirector } from "@/components/story-director";
 
 const POSES = ["pose-1", "pose-2", "pose-3", "pose-4"] as const;
 const SPRITE_ASSETS = import.meta.glob<string>("../../assets/sprites/*/pose-*.png", {
   eager: true, query: "?url", import: "default",
 });
-const MAP_FILES: Record<MapId, string> = {
-  set: "/set/stage.jpg", guion: "/set/guion-room.jpg", montaje: "/set/montaje-room.jpg",
+const MAP_FILES: Partial<Record<MapId, string>> = {
+  set: "/set/stage.jpg",
 };
 
 const INITIAL_LOG: LogLine[] = [
@@ -80,6 +83,8 @@ function drawCoffeeCorner(ctx: CanvasRenderingContext2D, x: number, y: number, s
 export function FilmSet() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simRef = useRef<Sim | null>(null);
+  const directorRef = useRef<SetDirector | null>(null);
+  const [snap, setSnap] = useState<SetSnapshot | null>(null);
   const [hud, setHud] = useState<Hud>(INITIAL_HUD);
   const [log, setLog] = useState<LogLine[]>(INITIAL_LOG);
   const [ready, setReady] = useState(false);
@@ -110,15 +115,20 @@ export function FilmSet() {
     const raw = createSim((line) => { blip(line.kind); setLog((prev) => [line, ...prev].slice(0, 40)); });
     const sim = enhanceSim(raw, (line) => { blip(line.kind); setLog((prev) => [line, ...prev].slice(0, 40)); });
     simRef.current = sim;
+    const addLog = (who: string, text: string) => setLog((prev) => [{ id: Date.now() + Math.random(), who, text, kind: "ok" as const }, ...prev].slice(0, 40));
+    const director = createSetDirector(addLog);
+    directorRef.current = director;
+    setSnap(director.snapshot());
+    let lastTake = 1;
 
     const sprites = new Map<string, HTMLImageElement>();
     const maps = new Map<MapId, HTMLImageElement>();
     let loaded = 0;
-    const needed = CREW.length * POSES.length + 3;
+    const needed = CREW.length * POSES.length + Object.keys(MAP_FILES).length;
     const mark = () => { loaded += 1; if (loaded >= needed) setReady(true); };
     (Object.keys(MAP_FILES) as MapId[]).forEach((id) => {
       const img = new Image(); img.onload = () => mark(); img.onerror = () => mark();
-      img.src = assetUrl(MAP_FILES[id]); maps.set(id, img);
+      img.src = assetUrl(MAP_FILES[id]!); maps.set(id, img);
     });
     for (const crew of CREW) {
       for (const pose of POSES) {
@@ -157,11 +167,13 @@ export function FilmSet() {
       const mapId = (sim.map as MapId) || "set";
       const stage = maps.get(mapId);
       const setStage = maps.get("set");
-      if (mapId === "set" && stage && stage.naturalWidth) {
-        const scale = Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);
-        layout.dw = stage.naturalWidth * scale; layout.dh = stage.naturalHeight * scale;
+      if (mapId === "set") {
+        if (stage && stage.naturalWidth) {
+          const scale = Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);
+          layout.dw = stage.naturalWidth * scale; layout.dh = stage.naturalHeight * scale;
+        } else { layout.dw = cw; layout.dh = ch; }
         layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
-        ctx.drawImage(stage, layout.ox, layout.oy, layout.dw, layout.dh);
+        drawScenery(ctx, layout.ox, layout.oy, layout.dw, layout.dh, director.snapshot(), anim, stage);
       } else if (mapId === "guion" || mapId === "montaje") {
         if (stage && stage.naturalWidth) {
           const scale = Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);
@@ -228,14 +240,19 @@ export function FilmSet() {
         lines.forEach((line, i) => ctx.fillText(line, bx + 8, by + 6 + i * 15));
       }
       ctx.restore();
+      drawTransition(ctx, cw, ch, director.transition());
     };
 
     const frame = (now: number) => {
       let dt = (now - last) / 1000; last = now; if (dt > 0.1) dt = 0.1;
       acc += dt; anim += dt;
+      director.step(dt);
       while (acc >= 1 / 60) { sim.step(1 / 60); acc -= 1 / 60; }
       draw(); hudTick += dt;
-      if (hudTick > 0.25) { hudTick = 0; setHud(sim.hud()); }
+      if (hudTick > 0.25) {
+        hudTick = 0; const h = sim.hud(); setHud(h); setSnap(director.snapshot());
+        if (h.take !== lastTake) { lastTake = h.take; if (director.snapshot().autoAdvance) director.nextScene(); }
+      }
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
@@ -272,7 +289,7 @@ export function FilmSet() {
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("pointerdown", unlock);
-      simRef.current = null;
+      simRef.current = null; directorRef.current = null;
     };
   }, []);
 
@@ -302,7 +319,7 @@ export function FilmSet() {
       <section className="grid gap-3 rounded-md border border-primary/40 bg-surface p-3 sm:grid-cols-[1fr_auto_auto]">
         <div>
           <p className="text-xs font-bold tracking-[0.16em] text-primary">
-            MISIÓN · TOMA {hud.take} · {hud.mapLabel.toUpperCase()} · {(hud.genre ?? "Drama").toUpperCase()}
+            MISIÓN · TOMA {hud.take} · {hud.mapLabel.toUpperCase()} · {(snap?.genre ?? hud.genre ?? "Drama").toUpperCase()}
           </p>
           <p className="mt-1 text-sm font-semibold text-fg">{hud.objective}</p>
           <p className="mt-1 text-xs text-muted">
@@ -406,6 +423,7 @@ export function FilmSet() {
           </p>
         ))}
       </div>
+      {snap && directorRef.current && <SetDirectorPanel snap={snap} director={directorRef.current} />}
       <StoryDirector onDecision={(choice) => run((sim) => sim.storyDecision(choice.consequence, choice.effects.quality ?? 0, choice.effects.tension ?? 0, choice.effects.morale ?? 0))} />
       <AdvisorPanel />
     </main>

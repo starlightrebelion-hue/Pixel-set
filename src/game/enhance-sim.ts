@@ -204,13 +204,8 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     origAccion();
   }
 
-  return {
-    ...base,
-    step,
-    hud,
-    accion,
-    resolveCrisis,
-    dismissTakeResult,
-    __enhanced: true,
-  } as Enhanced;
+  // OJO: `{...base}` congelaría los getters (map, phase, shake); se copian los descriptores.
+  const out = Object.defineProperties({}, Object.getOwnPropertyDescriptors(base)) as Enhanced;
+  Object.assign(out, { step, hud, accion, resolveCrisis, dismissTakeResult, __enhanced: true });
+  return out;
 }
