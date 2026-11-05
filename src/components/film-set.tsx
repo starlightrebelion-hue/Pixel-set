@@ -288,6 +288,7 @@ export function FilmSet() {
         else sim.cancelDrag(id);
         sim.click(world.nx, world.ny);
       },
+      onCrewCancel: (id) => sim.cancelDrag(id),
     });
 
     let mmCleanup: (() => void) | null = null;
