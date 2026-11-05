@@ -92,6 +92,16 @@ export function FilmSet() {
   const [selectedId, setSelectedId] = useState<CrewId | null>(null);
   const selectedRef = useRef<CrewId | null>(null);
   const [camTick, setCamTick] = useState(0);
+  const [toastText, setToastText] = useState<string | null>(null);
+  const lastToastId = useRef<number | null>(null);
+  const missionToast = hud.missionToast ?? null;
+  useEffect(() => {
+    if (!missionToast || missionToast.id === lastToastId.current) return;
+    lastToastId.current = missionToast.id;
+    setToastText(missionToast.text);
+    const t = window.setTimeout(() => setToastText(null), 4200);
+    return () => window.clearTimeout(t);
+  }, [missionToast]);
   selectedRef.current = selectedId;
   const gameActiveRef = useRef(false);
   // El juego corre sólo en pantalla de juego y sin menús abiertos.
@@ -445,6 +455,7 @@ export function FilmSet() {
   };
   const onGeneral = (action: GeneralActionId) => {
     if (action === "center") { zoom("reset"); return; }
+    if (action === "missions") { routePush(["play", "missions"]); return; }
     if (action === "scene") { routePush(["play", "scene"]); return; }
     if (action === "story") { routePush(["play", "story"]); return; }
     if (action === "studio") { routePush(["play", "studio"]); return; }
@@ -650,6 +661,10 @@ export function FilmSet() {
         </div></div>
       </header>
 
+      {toastText && (
+        <div role="status" className="pointer-events-none absolute left-1/2 top-28 z-30 max-w-[90vw] -translate-x-1/2 rounded-lg border-2 border-[#e2b340] bg-[#2a2410]/95 px-4 py-2 text-center text-sm font-bold text-[#e2b340] shadow-lg">{toastText}</div>
+      )}
+
       <CrewRoster people={hud.people} selectedId={selectedId} portraits={PORTRAITS} onSelect={selectCrew} onOptions={() => routePush(["play", "opts"])} />
 
       <CommandBar
@@ -707,6 +722,7 @@ export function FilmSet() {
 
       {playing && gamePath.length > 0 && (
         <GameMenus
+          hud={hud}
           path={gamePath}
           snap={snap}
           director={directorRef.current}

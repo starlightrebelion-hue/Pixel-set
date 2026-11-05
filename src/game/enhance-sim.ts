@@ -1,4 +1,5 @@
 import { DEFAULT_STORY, type StoryDefinition } from "@/game/stories";
+import { emptyCounters, missionsFor, viewMissions, type MissionDef } from "@/game/missions";
 import type { CrewId } from "@/game/crew";
 import type { Hud, LogLine, Sim } from "@/game/sim";
 
@@ -80,6 +81,12 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   let chapterIdx = 0, lives = 3, campaignComplete = false, gameOver = false;
   const chapter = () => story.chapters[chapterIdx] ?? story.chapters[story.chapters.length - 1]!;
   const DAY_TARGET_FN = () => 2 + chapterIdx;
+  // Misiones del capítulo actual
+  let counters = emptyCounters();
+  let defs: MissionDef[] = missionsFor(0, story.chapters[0]!);
+  let claimed = new Set<string>();
+  let rescueBase = 0;
+  let toast: { id: number; text: string } | null = null;
   let dayGoodTakes = 0;
   let totalStars = 0;
   let lastStars = 0;
@@ -99,12 +106,14 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   const origAccion = base.accion.bind(base);
   const origStep = base.step.bind(base);
 
-  function buildTakeResult(quality: number): TakeResult {
+  function buildTakeResult(quality: number, stressNow = 0): TakeResult {
     const stars = starsFromQuality(quality);
     lastStars = stars;
     totalStars += stars;
     const good = quality >= chapter().qualityTarget;
     if (good) dayGoodTakes += 1;
+    counters.stars += stars;
+    if (good) { counters.good_takes += 1; if (stressNow <= chapter().stressLimit) counters.clean_takes += 1; }
     if (stars === 0 && !gameOver) {
       lives = Math.max(0, lives - 1);
       if (lives === 0) { gameOver = true; onLog({ id: Date.now(), who: "Marcos", text: "Nos quedamos sin intentos. Fin de la jornada.", kind: "angry" }); }
@@ -133,7 +142,7 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
       playback: stars >= 3 ? "great" : stars >= 2 ? "ok" : "bad",
       dayGoodTakes,
       dayTarget: DAY_TARGET_FN(),
-      dayComplete: dayGoodTakes >= DAY_TARGET_FN(),
+      dayComplete: requiredDone(),
     };
   }
 
@@ -144,21 +153,44 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     if (crisis.id === "actor") bonds["actores|maquillaje"] = Math.max(0, Math.min(100, (bonds["actores|maquillaje"] ?? 50) + (pick === "A" ? 8 : -6)));
     if (crisis.id === "light") bonds["camara|luz"] = Math.max(0, Math.min(100, (bonds["camara|luz"] ?? 50) + (pick === "A" ? 6 : -2)));
     if (crisis.id === "continuity") bonds["guion|montaje"] = Math.max(0, Math.min(100, (bonds["guion|montaje"] ?? 50) + (pick === "A" ? 7 : -5)));
+    counters.crises += 1;
     crisis = null;
     crisisCooldown = 22 + Math.random() * 10;
   }
 
+  const requiredDone = () => defs.filter((d) => d.required).every((d) => counters[d.kind] >= d.target);
+
+  function setToast(text: string) { toast = { id: Date.now() + Math.random(), text }; }
+
+  /** Revisa misiones: entrega recompensas (con efecto real en el set) y avanza el capítulo. */
+  function reviewMissions() {
+    counters.bond = Math.max(...Object.values(bonds));
+    counters.rescues = Math.max(0, (origHud().rescuesTotal ?? 0) - rescueBase);
+    for (const m of viewMissions(defs, counters, claimed)) {
+      if (!m.done || m.claimed) continue;
+      claimed.add(m.id);
+      onLog({ id: Date.now() + Math.random(), who: "Marcos", text: `Misión cumplida: ${m.label}.${m.reward ? ` Recompensa: ${m.reward.label}.` : ""}`, kind: "dir" });
+      setToast(`✓ ${m.label}${m.reward ? ` · ${m.reward.label}` : ""}`);
+      if (m.reward?.lives) lives = Math.min(5, lives + m.reward.lives);
+      if (m.reward?.stars) totalStars += m.reward.stars;
+      if (m.reward?.quality) base.storyDecision("Buen ritmo de rodaje: el equipo se anima.", m.reward.quality, 0, 4);
+    }
+  }
+
+  function advanceChapter() {
+    dayGoodTakes = 0;
+    if (chapterIdx + 1 >= story.chapters.length) { campaignComplete = true; setToast("🏆 ¡Película terminada!"); onLog({ id: Date.now(), who: "Rey", text: `¡Fin de "${story.title}"! El equipo terminó la película.`, kind: "dir" }); return; }
+    chapterIdx += 1;
+    counters = emptyCounters(); claimed = new Set(); defs = missionsFor(chapterIdx, chapter());
+    rescueBase = origHud().rescuesTotal ?? 0;
+    setToast(`🎬 Capítulo ${chapterIdx + 1}: ${chapter().title}`);
+    onLog({ id: Date.now(), who: "Rey", text: `Capítulo ${chapterIdx + 1}: ${chapter().title}. ${chapter().briefing}`, kind: "dir" });
+    const idx = unlockedGenres.indexOf(genre);
+    genre = unlockedGenres[(idx + 1) % unlockedGenres.length] ?? "Drama";
+  }
+
   function dismissTakeResult() {
     takeResult = null;
-    if (dayGoodTakes >= DAY_TARGET_FN()) {
-      dayGoodTakes = 0;
-      if (chapterIdx + 1 >= story.chapters.length) { campaignComplete = true; onLog({ id: Date.now(), who: "Rey", text: `¡Fin de "${story.title}"! El equipo terminó la película.`, kind: "dir" }); return; }
-      chapterIdx += 1;
-      onLog({ id: Date.now(), who: "Rey", text: `Capítulo ${chapterIdx + 1}: ${chapter().title}. ${chapter().briefing}`, kind: "dir" });
-      const idx = unlockedGenres.indexOf(genre);
-      genre = unlockedGenres[(idx + 1) % unlockedGenres.length] ?? "Drama";
-      onLog({ id: Date.now(), who: "Marcos", text: `Nuevo día · género: ${genre}.`, kind: "ok" });
-    }
   }
 
   function step(dt: number) {
@@ -176,9 +208,11 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     }
 
     if (h.phase === "cut" && lastPhase !== "cut" && !takeResult) {
-      takeResult = buildTakeResult(h.quality);
+      takeResult = buildTakeResult(h.quality, h.stress);
     }
     lastPhase = h.phase;
+    reviewMissions();
+    if (!takeResult && requiredDone() && !campaignComplete && !gameOver) advanceChapter();
   }
 
   function hud(): Hud {
@@ -195,6 +229,9 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
       unlockedGenres: [...unlockedGenres],
       storyTitle: story.title, storyPremise: story.premise, chapterTitle: chapter().title, chapterBriefing: chapter().briefing,
       chapterIndex: chapterIdx + 1, chapterCount: story.chapters.length, lives, campaignComplete, gameOver,
+      rescuesTotal: h.rescuesTotal,
+      missions: viewMissions(defs, counters, claimed),
+      missionToast: toast,
       crisis,
       takeResult,
       onMarkReady: h.phase === "prep",
@@ -209,7 +246,10 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
           ? takeResult.dayComplete
             ? `Día listo: ${dayGoodTakes}/${DAY_TARGET_FN()} tomas buenas`
             : `Toma: ${"★".repeat(lastStars)}${"☆".repeat(3 - lastStars)}`
-          : h.objective,
+          : (() => {
+              const next = viewMissions(defs, counters, claimed).find((m) => m.required && !m.done);
+              return next ? `${next.label}: ${next.progress}/${next.target}` : h.objective;
+            })(),
       mood: crisis ? `Crisis: ${crisis.title}` : takeResult ? "Toma evaluada." : h.mood,
       paused: h.paused || !!crisis,
     };
@@ -218,6 +258,7 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   function startStory(next: StoryDefinition) {
     story = next.chapters?.length ? next : DEFAULT_STORY;
     chapterIdx = 0; lives = 3; campaignComplete = false; gameOver = false;
+    counters = emptyCounters(); claimed = new Set(); defs = missionsFor(0, chapter()); rescueBase = origHud().rescuesTotal ?? 0; toast = null;
     dayGoodTakes = 0; totalStars = 0; lastStars = 0; crisis = null; takeResult = null; crisisCooldown = 18;
     onLog({ id: Date.now(), who: "Rey", text: `Comienza "${story.title}". ${chapter().briefing}`, kind: "dir" });
   }

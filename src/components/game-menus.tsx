@@ -4,9 +4,11 @@ import type { SetDirector, SetSnapshot } from "@/game/set-director";
 import { StoryDirector } from "@/components/story-director";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import type { StoryChoice } from "@/game/story-engine";
+import type { Hud } from "@/game/sim";
 
 type Nav = { back: () => void; forward: () => void; push: (r: string[]) => void };
 type Props = {
+  hud: Hud;
   path: string[]; // ruta dentro del juego, p. ej. ["scene","place"]
   snap: SetSnapshot | null;
   director: SetDirector | null;
@@ -17,7 +19,7 @@ type Props = {
 };
 
 const TITLES: Record<string, string> = {
-  opts: "Opciones", scene: "Dirigir escena", genre: "Género", place: "Lugar", time: "Hora del día", weather: "Clima",
+  opts: "Opciones", missions: "Misiones", scene: "Dirigir escena", genre: "Género", place: "Lugar", time: "Hora del día", weather: "Clima",
   dress: "Decorado", plan: "Plan de 15 escenas", script: "Escribir guion", continuity: "Continuidad", story: "Historia", studio: "Estudio y asesores", help: "Cómo jugar",
 };
 
@@ -38,7 +40,7 @@ function Tile({ icon, title, value, onClick }: { icon: string; title: string; va
 }
 
 /** Menús del juego: una decisión por pantalla, con Atrás / Cerrar y ruta visible. */
-export function GameMenus({ path, snap, director, nav, onClose, onMainMenu, onStoryDecision }: Props) {
+export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu, onStoryDecision }: Props) {
   const [script, setScript] = useState("");
   const key = path[path.length - 1] ?? "opts";
   const go = (...next: string[]) => nav.push(["play", ...next]);
@@ -51,11 +53,40 @@ export function GameMenus({ path, snap, director, nav, onClose, onMainMenu, onSt
     body = (
       <div className="grid gap-2">
         <p className="text-sm text-[#c8d4a8]">¿Qué querés hacer?</p>
+        <Tile icon="🎯" title="Misiones" value={`Capítulo ${hud.chapterIndex ?? 1}/${hud.chapterCount ?? 1}`} onClick={() => go("missions")} />
         <Tile icon="📍" title="Dirigir escena" value="Lugar, hora, clima y decorado" onClick={() => go("scene")} />
         <Tile icon="📜" title="Historia" value="Decisiones del guion" onClick={() => go("story")} />
         <Tile icon="🏢" title="Estudio y asesores" value="Presupuesto y reuniones" onClick={() => go("studio")} />
         <Tile icon="❓" title="Cómo jugar" onClick={() => go("help")} />
         <Tile icon="🏠" title="Menú principal" value="Elegir otra historia" onClick={onMainMenu} />
+      </div>
+    );
+  } else if (key === "missions") {
+    const ms = hud.missions ?? [];
+    const row = (m: (typeof ms)[number]) => (
+      <li key={m.id} className="rounded-lg border border-[#3d5a1e] bg-[#0f140a] p-3">
+        <p className="flex items-center justify-between gap-2 text-sm font-bold text-white"><span>{m.done ? "✓ " : ""}{m.label}</span><span className="text-[#e2b340]">{m.progress}/{m.target}</span></p>
+        <div className="mt-1 h-1.5 overflow-hidden rounded bg-[#1c2a10]"><i className="block h-full bg-[#9fbf5a]" style={{ width: `${(m.progress / m.target) * 100}%` }} /></div>
+        <p className="mt-1 text-xs text-[#a8b88a]">{m.hint}</p>
+        {m.reward && <p className="mt-1 text-xs text-[#e2b340]">Recompensa: {m.reward.label}{m.claimed ? " (cobrada)" : ""}</p>}
+      </li>
+    );
+    body = (
+      <div className="grid gap-3">
+        <div className="rounded-lg border border-[#3d5a1e]/70 bg-[#0a0e06] p-3 text-sm">
+          <p className="text-[10px] font-bold tracking-widest text-[#9fbf5a]">{(hud.storyTitle ?? "").toUpperCase()} · CAPÍTULO {hud.chapterIndex}/{hud.chapterCount}</p>
+          <p className="font-bold text-white">{hud.chapterTitle}</p>
+          <p className="text-xs text-[#a8b88a]">{hud.chapterBriefing}</p>
+          <p className="mt-1 text-xs text-[#e2b340]">Intentos: {"♥".repeat(hud.lives ?? 0)}</p>
+        </div>
+        <div>
+          <p className="mb-1 text-xs font-bold tracking-widest text-[#9fbf5a]">OBLIGATORIAS · para pasar de capítulo</p>
+          <ul className="grid gap-2">{ms.filter((m) => m.required).map(row)}</ul>
+        </div>
+        <div>
+          <p className="mb-1 text-xs font-bold tracking-widest text-[#9fbf5a]">OPCIONALES · con recompensa en el set</p>
+          <ul className="grid gap-2">{ms.filter((m) => !m.required).map(row)}</ul>
+        </div>
       </div>
     );
   } else if (key === "help") {

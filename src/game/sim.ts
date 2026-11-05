@@ -50,6 +50,7 @@ export type Hud = {
   genre?: string; unlockedGenres?: string[];
   crisis?: Crisis | null; takeResult?: TakeResult | null;
   onMarkReady?: boolean; bonds?: BondInfo[];
+  rescuesTotal?: number; missions?: import("@/game/missions").MissionView[]; missionToast?: { id: number; text: string } | null;
   storyTitle?: string; storyPremise?: string; chapterTitle?: string; chapterBriefing?: string;
   chapterIndex?: number; chapterCount?: number; lives?: number; campaignComplete?: boolean; gameOver?: boolean;
 };
@@ -79,7 +80,7 @@ function clampPoint(x: number, y: number): [number, number] {
 
 export function createSim(onLog: (line: LogLine) => void) {
   let logId = 1, take = 1, sceneIndex = 0, stress = 12, quality = 8, paused = false;
-  let shake = 0, time = 0, timeLeft = 90, chatCooldown = 10.5, manualRescues = 0;
+  let rescuesTotal = 0, shake = 0, time = 0, timeLeft = 90, chatCooldown = 10.5, manualRescues = 0;
   let pending: Chat | null = null;
   let phase: Phase = "guion", phaseTimer = 10, map: MapId = "guion";
   let transition: Transition | null = null;
@@ -540,7 +541,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     if (dist(nx, ny, p.homeX, p.homeY) <= 0.12) {
       p.x = p.homeX; p.y = p.homeY; p.state = "work";
       if (wasAway) {
-        manualRescues = Math.min(RESCUE_GOAL, manualRescues + 1);
+        manualRescues = Math.min(RESCUE_GOAL, manualRescues + 1); rescuesTotal += 1;
         quality = clamp(quality + 7, 0, 100); stress = clamp(stress - 4, 0, 100);
         say(p, "¡Bien! Recuperé mi puesto.", "ok");
       }
@@ -636,7 +637,7 @@ export function createSim(onLog: (line: LogLine) => void) {
         : phase === "editing" ? "Editar ritmo y continuidad" : "Preparar la siguiente escena",
       stationCount: people.filter((p) => p.visible && (p.state === "work" || p.state === "seated") && dist(p.x, p.y, p.homeX, p.homeY) < 0.05).length,
       coffeeCount: people.filter((p) => p.visible && p.state === "coffee").length,
-      manualRescues, rescueGoal: RESCUE_GOAL,
+      manualRescues, rescueGoal: RESCUE_GOAL, rescuesTotal,
       people: people.map((p) => ({
         id: p.id, name: p.name, role: p.role, state: p.state,
         moving: p.visible && (p.state === "work" || p.state === "coffee" || p.carrying) && dist(p.x, p.y, p.tx, p.ty) > 0.02,

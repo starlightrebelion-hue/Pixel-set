@@ -2,7 +2,7 @@ import type { Hud, LogLine } from "@/game/sim";
 import type { CrewId } from "@/game/crew";
 
 export type CrewCommandId = "station" | "coffee" | "praise" | "scold" | "wake" | "center" | "deselect";
-export type GeneralActionId = "action" | "cut" | "pause" | "team" | "scene" | "story" | "studio" | "center" | "options";
+export type GeneralActionId = "action" | "cut" | "pause" | "team" | "scene" | "story" | "studio" | "center" | "options" | "missions";
 
 type Props = {
   hud: Hud;
@@ -77,12 +77,24 @@ export function CommandBar({ hud, log, selectedId, onCrewCommand, onGeneral, onZ
               <button type="button" onClick={() => onZoom("in")} className="sc-btn flex-1" aria-label="Acercar">+</button>
             </div>
           </div>
-          <div className="min-w-0 rounded border border-[#3d5a1e]/70 bg-[#0a0e06] p-1.5">
-            <p className="text-[8px] font-bold tracking-widest text-[#9fbf5a]">{selected ? "ÓRDENES" : "MISIÓN"}</p>
-            <p className="line-clamp-4 text-[11px] font-semibold leading-snug text-white">
-              {selected ? "Elegí una orden o tocá otro personaje." : hud.objective}
-            </p>
-          </div>
+          {selected ? (
+            <div className="min-w-0 rounded border border-[#3d5a1e]/70 bg-[#0a0e06] p-1.5">
+              <p className="text-[8px] font-bold tracking-widest text-[#9fbf5a]">ÓRDENES</p>
+              <p className="line-clamp-4 text-[11px] font-semibold leading-snug text-white">Elegí una orden o tocá otro personaje.</p>
+            </div>
+          ) : (
+            <button type="button" onClick={() => onGeneral("missions")} aria-label="Ver misiones del capítulo"
+              className="min-w-0 rounded border border-[#3d5a1e]/70 bg-[#0a0e06] p-1.5 text-left active:bg-[#16200c]">
+              <p className="text-[8px] font-bold tracking-widest text-[#9fbf5a]">MISIONES {hud.chapterIndex ? `· CAP. ${hud.chapterIndex}/${hud.chapterCount}` : ""}</p>
+              {(hud.missions ?? []).filter((m) => m.required).slice(0, 3).map((m) => (
+                <div key={m.id} className="mt-0.5">
+                  <p className="flex justify-between gap-1 text-[10px] leading-tight text-white"><span className="truncate">{m.done ? "✓ " : ""}{m.label}</span><span className="shrink-0 text-[#e2b340]">{m.progress}/{m.target}</span></p>
+                  <div className="h-1 overflow-hidden rounded bg-[#1c2a10]"><i className="block h-full bg-[#9fbf5a]" style={{ width: `${(m.progress / m.target) * 100}%` }} /></div>
+                </div>
+              ))}
+              {(hud.missions ?? []).length === 0 && <p className="text-[11px] font-semibold text-white">{hud.objective}</p>}
+            </button>
+          )}
           <div className="grid grid-cols-3 gap-0.5" aria-label={selected ? `Órdenes de ${selected.name}` : "Comandos"}>
             {slots.map((s, i) =>
               s ? (
