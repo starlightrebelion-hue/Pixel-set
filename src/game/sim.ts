@@ -1,3 +1,4 @@
+import { inferGenreFromScript, GENRE_SETS } from "@/game/genre-sets";
 import {
   ANGRY_REPLIES,
   BOUNDS,
@@ -35,6 +36,8 @@ export type Hud = {
   timeLeft: number; objective: string; stationCount: number; coffeeCount: number;
   manualRescues: number; rescueGoal: number; people: HudPerson[]; phase: Phase; map: MapId; mapLabel: string;
   transitioning: boolean;
+  genre: keyof typeof GENRE_SETS;
+  genreLabel: string;
 };
 type Chat = { a: CrewId; b: CrewId; line: string; reply: string; said: boolean; age: number };
 
