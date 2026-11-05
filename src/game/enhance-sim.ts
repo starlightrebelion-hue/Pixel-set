@@ -1,5 +1,6 @@
 import { DEFAULT_STORY, type StoryDefinition } from "@/game/stories";
 import { emptyCounters, missionsFor, viewMissions, type MissionDef } from "@/game/missions";
+import { DEPARTMENTS, computeEffects, deptOf, type BoostKey, type DeptView, type Effects } from "@/game/departments";
 import type { CrewId } from "@/game/crew";
 import type { Hud, LogLine, Sim } from "@/game/sim";
 
@@ -58,6 +59,8 @@ const CRISES: Crisis[] = [
 export type Enhanced = Sim & {
   startStory: (story: StoryDefinition) => void;
   resolveCrisis: (pick: "A" | "B") => void;
+  orderCrew: (crewId: CrewId, orderId: string) => { ok: boolean; message: string };
+  setConditions: (c: { darkness: number }) => void;
   dismissTakeResult: () => void;
   __enhanced?: boolean;
 };
@@ -81,6 +84,13 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   let chapterIdx = 0, lives = 3, campaignComplete = false, gameOver = false;
   const chapter = () => story.chapters[chapterIdx] ?? story.chapters[story.chapters.length - 1]!;
   const DAY_TARGET_FN = () => 2 + chapterIdx;
+  // Departamentos: eficiencia por rol, refuerzos temporales y enfriamientos de órdenes
+  const eff = Object.fromEntries(DEPARTMENTS.map((d) => [d.id, 1])) as Record<CrewId, number>;
+  const boosts: Partial<Record<BoostKey, number>> = {};
+  const cooldowns: Record<string, number> = {};
+  let darkness = 0, hype = 0, reviewArmed = false;
+  let fx: Effects = computeEffects(eff, boosts, 0);
+  const BOOST_DEPT: Partial<Record<CrewId, BoostKey>> = { camara: "focus", luz: "lights", sonido: "silence", actores: "rehearse", maquillaje: "look", guion: "rewrite" };
   // Misiones del capítulo actual
   let counters = emptyCounters();
   let defs: MissionDef[] = missionsFor(0, story.chapters[0]!);
@@ -107,7 +117,12 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   const origStep = base.step.bind(base);
 
   function buildTakeResult(quality: number, stressNow = 0): TakeResult {
-    const stars = starsFromQuality(quality);
+    // Posproducción y hype: el montaje mejora la toma; el hype puede sumar una estrella.
+    const bonus = fx.editorBonus + (reviewArmed ? 6 : 0);
+    if (bonus > 0) { quality = Math.min(100, quality + bonus); onLog({ id: Date.now() + Math.random(), who: "Lila", text: `Edición: +${bonus} de calidad${reviewArmed ? " (cinta revisada)" : ""}.`, kind: "ok" }); }
+    reviewArmed = false;
+    let stars = starsFromQuality(quality);
+    if (hype >= 50 && quality >= 55 && stars < 3) { stars += 1; hype = Math.max(0, hype - 25); onLog({ id: Date.now() + Math.random(), who: "Nora", text: "El hype del estudio suma una estrella a la toma.", kind: "ok" }); }
     lastStars = stars;
     totalStars += stars;
     const good = quality >= chapter().qualityTarget;
@@ -193,13 +208,83 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     takeResult = null;
   }
 
+  function targetEff(p: (typeof base.people)[number], remote: boolean) {
+    if (!p.visible) return remote ? 0.85 : 0;
+    if (p.dragging) return 0.2;
+    if (p.state === "sleep") return 0;
+    if (p.state === "angry") return 0.25;
+    if (p.state === "coffee") return 0.15;
+    if (p.state === "talk") return 0.4;
+    if (p.carrying) return 0.3;
+    return Math.hypot(p.x - p.homeX, p.y - p.homeY) < 0.06 ? 1 : 0.55;
+  }
+
+  function updateDepartments(dt: number, phase: string) {
+    for (const d of DEPARTMENTS) {
+      const p = base.people.find((q) => q.id === d.id);
+      const t = p ? targetEff(p, !!d.remote) : 0;
+      eff[d.id] += (t - eff[d.id]) * Math.min(1, dt * 2.5);
+    }
+    for (const k of Object.keys(boosts) as BoostKey[]) { boosts[k] = Math.max(0, (boosts[k] ?? 0) - dt); if (!boosts[k]) delete boosts[k]; }
+    for (const k of Object.keys(cooldowns)) cooldowns[k] = Math.max(0, cooldowns[k]! - dt);
+    fx = computeEffects(eff, boosts, darkness);
+    hype = Math.max(0, Math.min(100, hype + (eff.marketing > 0.5 ? 0.25 : 0) * dt - 0.05 * dt));
+    if (phase === "rolling") base.adjust(fx.qualityRate * dt, fx.stressRate * dt, -fx.timeDrain * dt);
+  }
+
+  function orderCrew(crewId: CrewId, orderId: string): { ok: boolean; message: string } {
+    const dept = deptOf(crewId);
+    const order = dept?.orders.find((o) => o.id === orderId);
+    if (!dept || !order) return { ok: false, message: "Orden desconocida." };
+    if (crisis || takeResult || gameOver || campaignComplete) return { ok: false, message: "Ahora no se pueden dar órdenes." };
+    const key = `${crewId}:${orderId}`;
+    const left = cooldowns[key] ?? 0;
+    if (left > 0) return { ok: false, message: `${order.label}: disponible en ${Math.ceil(left)}s.` };
+    if (eff[crewId] < 0.3) { base.speak(crewId, "No puedo ahora: no estoy en mi puesto.", "angry"); return { ok: false, message: `${dept.name} no está en su puesto.` }; }
+    const power = 0.6 + 0.4 * eff.director;
+    const e = order.effect;
+    let q = (e.quality ?? 0) * (e.quality && e.quality > 0 ? power : 1);
+    let st = e.stress ?? 0;
+    let say = order.say;
+    if (orderId === "reflector") q = (2 + 4 * darkness) * power;
+    if (e.gamble) {
+      if (Math.random() < 0.6) { q = 8 * power; say = "¡Salió algo muy bueno!"; } else { q = -4; st = 6; say = "Uf… no funcionó. Perdimos ritmo."; }
+    }
+    base.adjust(q, st, e.time ?? 0);
+    if (e.hype) hype = Math.min(100, hype + e.hype);
+    if (e.boost) boosts[e.boost.key] = e.boost.seconds;
+    if (e.arm === "review") reviewArmed = true;
+    cooldowns[key] = order.cooldown;
+    base.speak(crewId, say, q < 0 ? "angry" : "ok");
+    setToast(`${order.icon} ${order.label}`);
+    return { ok: true, message: say };
+  }
+
+  function setConditions(c: { darkness: number }) { darkness = Math.max(0, Math.min(1, c.darkness)); }
+
+  function departmentViews(phase: string): DeptView[] {
+    return DEPARTMENTS.map((d) => {
+      const boostKey = BOOST_DEPT[d.id];
+      const e = eff[d.id];
+      const boosted = !!boostKey && (boosts[boostKey] ?? 0) > 0;
+      const live = phase === "prep" || phase === "rolling";
+      return {
+        id: d.id, name: d.name, channel: d.channel, efficiency: Math.round(e * 100),
+        status: boosted ? "boost" : e < 0.3 ? "out" : e < 0.6 ? "weak" : "ok",
+        effect: live ? (fx.effect[d.id] ?? "") : (e < 0.3 && !d.remote ? "Fuera del set" : "En espera"),
+        orders: d.orders.map((o) => { const cd = cooldowns[`${d.id}:${o.id}`] ?? 0; return { id: o.id, label: o.label, icon: o.icon, hint: o.hint, cooldownLeft: Math.ceil(cd), ready: cd <= 0 }; }),
+      };
+    });
+  }
+
   function step(dt: number) {
     if (crisis || campaignComplete || gameOver) return;
     origStep(dt);
     const h = origHud();
+    updateDepartments(dt, h.phase);
 
     if (h.phase === "rolling") {
-      crisisCooldown -= dt;
+      crisisCooldown -= dt * fx.crisisMult;
       if (crisisCooldown <= 0 && Math.random() < 0.28) {
         crisis = pickCrisis();
         crisisCooldown = 28;
@@ -229,6 +314,9 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
       unlockedGenres: [...unlockedGenres],
       storyTitle: story.title, storyPremise: story.premise, chapterTitle: chapter().title, chapterBriefing: chapter().briefing,
       chapterIndex: chapterIdx + 1, chapterCount: story.chapters.length, lives, campaignComplete, gameOver,
+      departments: departmentViews(h.phase),
+      alerts: h.phase === "prep" || h.phase === "rolling" ? fx.alerts.filter(Boolean) : [],
+      hype: Math.round(hype),
       rescuesTotal: h.rescuesTotal,
       missions: viewMissions(defs, counters, claimed),
       missionToast: toast,
@@ -258,6 +346,9 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   function startStory(next: StoryDefinition) {
     story = next.chapters?.length ? next : DEFAULT_STORY;
     chapterIdx = 0; lives = 3; campaignComplete = false; gameOver = false;
+    for (const k of Object.keys(boosts)) delete boosts[k as BoostKey];
+    for (const k of Object.keys(cooldowns)) delete cooldowns[k];
+    hype = 0; reviewArmed = false;
     counters = emptyCounters(); claimed = new Set(); defs = missionsFor(0, chapter()); rescueBase = origHud().rescuesTotal ?? 0; toast = null;
     dayGoodTakes = 0; totalStars = 0; lastStars = 0; crisis = null; takeResult = null; crisisCooldown = 18;
     onLog({ id: Date.now(), who: "Rey", text: `Comienza "${story.title}". ${chapter().briefing}`, kind: "dir" });
@@ -270,6 +361,6 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
 
   // OJO: `{...base}` congelaría los getters (map, phase, shake); se copian los descriptores.
   const out = Object.defineProperties({}, Object.getOwnPropertyDescriptors(base)) as Enhanced;
-  Object.assign(out, { step, hud, accion, startStory, resolveCrisis, dismissTakeResult, __enhanced: true });
+  Object.assign(out, { step, hud, accion, startStory, orderCrew, setConditions, resolveCrisis, dismissTakeResult, __enhanced: true });
   return out;
 }

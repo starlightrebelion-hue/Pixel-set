@@ -5,6 +5,7 @@ import { StoryDirector } from "@/components/story-director";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import type { StoryChoice } from "@/game/story-engine";
 import type { Hud } from "@/game/sim";
+import type { CrewId } from "@/game/crew";
 
 type Nav = { back: () => void; forward: () => void; push: (r: string[]) => void };
 type Props = {
@@ -16,10 +17,11 @@ type Props = {
   onClose: () => void;
   onMainMenu: () => void;
   onStoryDecision: (c: StoryChoice) => void;
+  onOrder: (crewId: CrewId, orderId: string) => void;
 };
 
 const TITLES: Record<string, string> = {
-  opts: "Opciones", missions: "Misiones", scene: "Dirigir escena", genre: "Género", place: "Lugar", time: "Hora del día", weather: "Clima",
+  opts: "Opciones", missions: "Misiones", departments: "Departamentos", scene: "Dirigir escena", genre: "Género", place: "Lugar", time: "Hora del día", weather: "Clima",
   dress: "Decorado", plan: "Plan de 15 escenas", script: "Escribir guion", continuity: "Continuidad", story: "Historia", studio: "Estudio y asesores", help: "Cómo jugar",
 };
 
@@ -40,7 +42,7 @@ function Tile({ icon, title, value, onClick }: { icon: string; title: string; va
 }
 
 /** Menús del juego: una decisión por pantalla, con Atrás / Cerrar y ruta visible. */
-export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu, onStoryDecision }: Props) {
+export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu, onStoryDecision, onOrder }: Props) {
   const [script, setScript] = useState("");
   const key = path[path.length - 1] ?? "opts";
   const go = (...next: string[]) => nav.push(["play", ...next]);
@@ -53,6 +55,7 @@ export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu,
     body = (
       <div className="grid gap-2">
         <p className="text-sm text-[#c8d4a8]">¿Qué querés hacer?</p>
+        <Tile icon="🏭" title="Departamentos" value={(hud.alerts?.length ?? 0) > 0 ? `⚠ ${hud.alerts![0]}` : "Estado y órdenes de cada área"} onClick={() => go("departments")} />
         <Tile icon="🎯" title="Misiones" value={`Capítulo ${hud.chapterIndex ?? 1}/${hud.chapterCount ?? 1}`} onClick={() => go("missions")} />
         <Tile icon="📍" title="Dirigir escena" value="Lugar, hora, clima y decorado" onClick={() => go("scene")} />
         <Tile icon="📜" title="Historia" value="Decisiones del guion" onClick={() => go("story")} />
@@ -89,14 +92,40 @@ export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu,
         </div>
       </div>
     );
+  } else if (key === "departments") {
+    const ds = hud.departments ?? [];
+    const color = { ok: "#9fbf5a", weak: "#e2b340", out: "#d4533c", boost: "#6ac8e8" } as const;
+    const label = { ok: "OK", weak: "Débil", out: "Fuera", boost: "Reforzado" } as const;
+    body = (
+      <div className="grid gap-2">
+        <p className="text-xs text-[#a8b88a]">Cada área afecta la toma de forma distinta. Si alguien no está en su puesto, sufre su efecto. Tocá una orden para darla.</p>
+        {ds.map((d) => (
+          <div key={d.id} className="rounded-lg border bg-[#0f140a] p-3" style={{ borderColor: color[d.status] + "88" }}>
+            <p className="flex items-center justify-between gap-2 text-sm font-bold text-white"><span>{d.name} <span className="text-[10px] font-normal text-[#7a8f4a]">· {d.channel}</span></span><span className="text-xs" style={{ color: color[d.status] }}>{label[d.status]} {d.efficiency}%</span></p>
+            <div className="mt-1 h-1.5 overflow-hidden rounded bg-[#1c2a10]"><i className="block h-full" style={{ width: `${d.efficiency}%`, background: color[d.status] }} /></div>
+            <p className="mt-1 text-xs text-[#c8d4a8]">{d.effect}</p>
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              {d.orders.map((o) => (
+                <button key={o.id} type="button" disabled={!o.ready} onClick={() => onOrder(d.id, o.id)}
+                  className={`min-h-11 rounded-lg border px-2 py-1 text-left text-xs font-bold ${o.ready ? "border-[#e2b340] bg-[#2a2410] text-[#e2b340]" : "border-[#3d5a1e] bg-[#0a0e06] text-[#7a8f4a] opacity-70"}`}>
+                  {o.ready ? o.icon : `${o.cooldownLeft}s`} {o.label}<span className="block text-[10px] font-normal text-[#a8b88a]">{o.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <p className="text-xs text-[#e2b340]">Hype del estudio: {hud.hype ?? 0}% (con 50% o más una buena toma gana una estrella extra).</p>
+      </div>
+    );
   } else if (key === "help") {
     body = (
       <ol className="grid gap-3 text-sm text-[#c8d4a8]">
         <li><strong className="text-white">1. Tocá un personaje</strong> (en el mapa o en los iconos de la derecha) para ver sus órdenes abajo.</li>
         <li><strong className="text-white">2. Mantené el equipo en su puesto.</strong> Si alguien se duerme o se va al café, mandalo "A su puesto" o arrastralo.</li>
         <li><strong className="text-white">3. ¡Acción!</strong> pasa de guion a preparación y a rodaje. <strong className="text-white">¡Corten!</strong> termina la toma.</li>
-        <li><strong className="text-white">4. 📍 Escena</strong> cambia el lugar, la hora y el clima de la película.</li>
-        <li><strong className="text-white">5.</strong> Con el botón Atrás del celular volvés al menú anterior.</li>
+        <li><strong className="text-white">4. Cada rol tiene 2 órdenes propias</strong> (botones verdes al tocarlo). Si un área no está en su puesto, la toma lo sufre: mirá 🏭 Departamentos.</li>
+        <li><strong className="text-white">5. 📍 Escena</strong> cambia el lugar, la hora y el clima de la película.</li>
+        <li><strong className="text-white">6.</strong> Con el botón Atrás del celular volvés al menú anterior.</li>
       </ol>
     );
   } else if (key === "story") {

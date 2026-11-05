@@ -329,6 +329,7 @@ export function FilmSet() {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now; anim += dt;
       director.step(dt);
+      sim.setConditions({ darkness: Math.min(1, director.snapshot().lighting.alpha / 0.6) });
       if (gameActiveRef.current) sim.step(dt);
       draw();
       const h = sim.hud();
@@ -453,8 +454,16 @@ export function FilmSet() {
     if (cmd === "center") { centerOn(selectedId); return; }
     run((sim) => sim.commandCrew(selectedId, cmd));
   };
+  const onOrder = (crewId: CrewId, orderId: string) => {
+    const sim = simRef.current;
+    if (!sim) return;
+    const r = sim.orderCrew(crewId, orderId);
+    if (!r.ok) { setToastText(r.message); window.setTimeout(() => setToastText(null), 2600); }
+    setHud(sim.hud());
+  };
   const onGeneral = (action: GeneralActionId) => {
     if (action === "center") { zoom("reset"); return; }
+    if (action === "departments") { routePush(["play", "departments"]); return; }
     if (action === "missions") { routePush(["play", "missions"]); return; }
     if (action === "scene") { routePush(["play", "scene"]); return; }
     if (action === "story") { routePush(["play", "story"]); return; }
@@ -672,6 +681,7 @@ export function FilmSet() {
         log={log}
         selectedId={selectedId}
         onCrewCommand={onCrewCommand}
+        onOrder={onOrder}
         onGeneral={onGeneral}
         onZoom={zoom}
         minimapRef={minimapRef}
@@ -729,6 +739,7 @@ export function FilmSet() {
           nav={{ back: routeBack, forward: routeForward, push: routePush }}
           onClose={() => routePush(["play"])}
           onMainMenu={() => routePush(["menu"])}
+          onOrder={onOrder}
           onStoryDecision={(choice) => run((sim) => sim.storyDecision(choice.consequence, choice.effects.quality ?? 0, choice.effects.tension ?? 0, choice.effects.morale ?? 0))}
         />
       )}

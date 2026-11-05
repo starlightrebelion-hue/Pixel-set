@@ -50,6 +50,7 @@ export type Hud = {
   genre?: string; unlockedGenres?: string[];
   crisis?: Crisis | null; takeResult?: TakeResult | null;
   onMarkReady?: boolean; bonds?: BondInfo[];
+  departments?: import("@/game/departments").DeptView[]; alerts?: string[]; hype?: number;
   rescuesTotal?: number; missions?: import("@/game/missions").MissionView[]; missionToast?: { id: number; text: string } | null;
   storyTitle?: string; storyPremise?: string; chapterTitle?: string; chapterBriefing?: string;
   chapterIndex?: number; chapterCount?: number; lives?: number; campaignComplete?: boolean; gameOver?: boolean;
@@ -576,6 +577,16 @@ export function createSim(onLog: (line: LogLine) => void) {
     }
   }
 
+  /** Ajuste silencioso de calidad / estrés / tiempo (lo usan los departamentos). */
+  function adjust(dq: number, ds: number, dtime = 0) {
+    quality = clamp(quality + dq, 0, 100); stress = clamp(stress + ds, 0, 100);
+    if (dtime) timeLeft = Math.max(0, timeLeft + dtime);
+  }
+  /** Una persona habla / hace una seña (burbuja y aro) sin cambiar su estado. */
+  function speak(id: CrewId, text: string, kind: BubbleKind = "ok") {
+    const p = byId(id); p.ring = 2.2; say(p, text, kind); burst("confetti", p.x, p.y - 0.08, 4);
+  }
+
   function focus(id: CrewId) {
     const p = byId(id);
     if (!p.visible) return;
@@ -654,7 +665,7 @@ export function createSim(onLog: (line: LogLine) => void) {
 
   return {
     people, particles, step, accion, coordinate, scold: scoldRandom, chaos, corten,
-    click, grab, drag, drop, cancelDrag, focus, commandCrew, goMap, hud, storyDecision,
+    click, grab, drag, drop, cancelDrag, focus, commandCrew, adjust, speak, goMap, hud, storyDecision,
     resolveCrisis, dismissTakeResult,
     get shake() { return shake; }, get map() { return map; }, get phase() { return phase; },
   };
