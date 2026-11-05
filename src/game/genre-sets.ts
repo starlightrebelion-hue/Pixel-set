@@ -14,9 +14,9 @@ const RULES: Array<[GenreId,string[]]> = [
  ["science-fiction",["nave","robot","espacio","futuro","laboratorio","alien"]],
  ["western",["western","saloon","vaquero","desierto","sheriff","tren"]],
  ["fantasy",["dragón","dragon","castillo","magia","hechizo","reino"]],
- ["horror",["terror","fantasma","monstruo","miedo","oscuro","asesino"]],
- ["noir",["detective","policía","policia","crimen","investigación","investigacion","callejón","callejon"]],
- ["romance",["amor","pareja","beso","romance","cita","enamor"]],
+ ["horror",["silencio","terror","fantasma","monstruo","miedo","oscuro","asesino"]],
+ ["noir",["traición","lluvia","detective","policía","policia","crimen","investigación","investigacion","callejón","callejon"]],
+ ["romance",["reencuentro","amor","pareja","beso","romance","cita","enamor"]],
  ["comedy",["comedia","absurdo","confusión","confusion","chiste"]],
  ["adventure",["jungla","selva","expedición","expedicion","tesoro","aventura"]],
 ];
