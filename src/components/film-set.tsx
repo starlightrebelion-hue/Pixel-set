@@ -3,7 +3,8 @@ import { Clapperboard, Film, Library, Megaphone, Pause, TriangleAlert, Users } f
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
 import { CREW, stateLabel, type CrewId, type MapId } from "@/game/crew";
 import { COFFEE_SPOT, createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
-import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";\nimport { drawGenreSet } from "@/game/genre-sets";
+import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
+import { drawGenreSet } from "@/game/genre-sets";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import { StoryDirector } from "@/components/story-director";
 
@@ -178,7 +179,8 @@ export function FilmSet() {
       } else {
         layout.ox = 0; layout.oy = 0; layout.dw = cw; layout.dh = ch;
       }
-      if (mapId === "set" && stage?.naturalWidth) drawGenreSet(ctx, layout.ox, layout.oy, layout.dw, layout.dh, sim.hud().genre);\n      const toX = (nx: number) => layout.ox + nx * layout.dw;
+      if (mapId === "set" && stage?.naturalWidth) drawGenreSet(ctx, layout.ox, layout.oy, layout.dw, layout.dh, sim.hud().genre);
+      const toX = (nx: number) => layout.ox + nx * layout.dw;
       const toY = (ny: number) => layout.oy + ny * layout.dh;
       const size = layout.dh * 0.23;
       const visible = sim.people.filter((p) => p.visible !== false);
