@@ -1,6 +1,6 @@
 /** Escenarios intercambiables, plan de película de 15 escenas, puesta en escena y continuidad. */
 
-export const GENRE_LIST = ["Drama", "Thriller", "Comedia", "Terror", "Romance", "Ciencia ficción"] as const;
+export const GENRE_LIST = ["Drama", "Thriller", "Comedia", "Terror", "Romance", "Ciencia ficción", "Noir", "Fantasía", "Western", "Aventura"] as const;
 export type Genre = (typeof GENRE_LIST)[number];
 export const TIMES = ["amanecer", "día", "tarde", "noche"] as const;
 export type TimeOfDay = (typeof TIMES)[number];
@@ -30,31 +30,31 @@ export const LOCATIONS: Location[] = [
     palette: P("#7a5c48", "#6a4c3a", "#a87848", "#8a6038", "#e8b86a"),
     furniture: [f("window", 0.2, 0.2, 0.2), f("painting", 0.5, 0.18, 0.12), f("window", 0.78, 0.2, 0.2), f("shelf", 0.1, 0.4, 0.26), f("sofa", 0.42, 0.46, 0.2), f("lamp", 0.9, 0.42, 0.2), f("rug", 0.5, 0.78, 0.4), f("plant", 0.93, 0.5, 0.15)],
     surface: [{ x: 0.5, y: 0.52, label: "mesa baja" }] },
-  { id: "cafe", name: "Café de barrio", interior: true, genres: ["Drama", "Romance", "Comedia", "Thriller"], tags: ["public", "intimate"], keywords: ["café", "cafe", "encuentro", "cita", "desayuno", "bar"],
+  { id: "cafe", name: "Café de barrio", interior: true, genres: ["Drama", "Romance", "Comedia", "Thriller", "Noir", "Western"], tags: ["public", "intimate"], keywords: ["café", "cafe", "encuentro", "cita", "desayuno", "bar"],
     palette: P("#6a4a3a", "#5a3c2e", "#9a7248", "#7e5a38", "#d89a50"),
     furniture: [f("window", 0.2, 0.2, 0.22), f("window", 0.5, 0.2, 0.22), f("counter", 0.82, 0.42, 0.24), f("table", 0.22, 0.5, 0.14), f("table", 0.5, 0.5, 0.14), f("lamp", 0.35, 0.18, 0.12), f("plant", 0.07, 0.48, 0.14)],
     surface: [{ x: 0.5, y: 0.5, label: "mesa" }, { x: 0.22, y: 0.5, label: "mesa" }] },
-  { id: "hospital", name: "Pasillo de hospital", interior: true, genres: ["Drama", "Terror", "Thriller"], tags: ["public", "secret"], keywords: ["hospital", "médico", "pasillo", "enfermo", "clínica"],
+  { id: "hospital", name: "Pasillo de hospital", interior: true, genres: ["Drama", "Terror", "Thriller", "Noir"], tags: ["public", "secret"], keywords: ["hospital", "médico", "pasillo", "enfermo", "clínica"],
     palette: P("#a8b8b4", "#8aa09c", "#c8d0cc", "#b0bab6", "#6ac0b0"),
     furniture: [f("door", 0.14, 0.34, 0.26), f("door", 0.4, 0.34, 0.26), f("door", 0.66, 0.34, 0.26), f("bench", 0.5, 0.5, 0.18), f("lamp", 0.28, 0.14, 0.1), f("lamp", 0.78, 0.14, 0.1), f("plant", 0.92, 0.5, 0.14)],
     surface: [{ x: 0.5, y: 0.5, label: "banco" }] },
-  { id: "estacion", name: "Estación de tren", interior: false, genres: ["Drama", "Romance", "Thriller"], tags: ["public", "street", "climax"], keywords: ["estación", "tren", "viaje", "partida", "despedida", "andén"],
+  { id: "estacion", name: "Estación de tren", interior: false, genres: ["Drama", "Romance", "Thriller", "Noir", "Western", "Aventura"], tags: ["public", "street", "climax"], keywords: ["estación", "tren", "viaje", "partida", "despedida", "andén"],
     palette: P("#6a7480", "#58626e", "#7a7a80", "#686870", "#e2b340"),
     furniture: [f("building", 0.2, 0.3, 0.3), f("lamppost", 0.12, 0.4, 0.3), f("bench", 0.4, 0.5, 0.18), f("lamppost", 0.62, 0.4, 0.3), f("bench", 0.82, 0.5, 0.18), f("fence", 0.5, 0.42, 0.2)],
     surface: [{ x: 0.4, y: 0.5, label: "banco" }] },
-  { id: "oficina", name: "Oficina", interior: true, genres: ["Thriller", "Comedia", "Drama", "Ciencia ficción"], tags: ["work", "secret"], keywords: ["oficina", "trabajo", "jefe", "archivo", "reunión", "expediente"],
+  { id: "oficina", name: "Oficina", interior: true, genres: ["Thriller", "Comedia", "Drama", "Ciencia ficción", "Noir"], tags: ["work", "secret"], keywords: ["oficina", "trabajo", "jefe", "archivo", "reunión", "expediente"],
     palette: P("#8a8e96", "#747880", "#6a6e78", "#5a5e68", "#6ab0e0"),
     furniture: [f("window", 0.22, 0.2, 0.24), f("window", 0.6, 0.2, 0.24), f("desk", 0.28, 0.5, 0.2), f("desk", 0.62, 0.5, 0.2), f("shelf", 0.9, 0.38, 0.26), f("plant", 0.07, 0.5, 0.15), f("tv", 0.45, 0.18, 0.12)],
     surface: [{ x: 0.28, y: 0.48, label: "escritorio" }, { x: 0.62, y: 0.48, label: "escritorio" }] },
-  { id: "callejon", name: "Callejón", interior: false, genres: ["Thriller", "Drama", "Terror", "Ciencia ficción"], tags: ["street", "secret", "climax"], keywords: ["callejón", "calle", "persecución", "huida", "esquina", "sombras"],
+  { id: "callejon", name: "Callejón", interior: false, genres: ["Thriller", "Drama", "Terror", "Ciencia ficción", "Noir"], tags: ["street", "secret", "climax"], keywords: ["callejón", "calle", "persecución", "huida", "esquina", "sombras"],
     palette: P("#2e3038", "#22242c", "#3a3a40", "#2e2e34", "#e2b340"),
     furniture: [f("building", 0.14, 0.28, 0.34), f("building", 0.82, 0.28, 0.34), f("lamppost", 0.38, 0.4, 0.3), f("crate", 0.7, 0.5, 0.1), f("crate", 0.62, 0.52, 0.08), f("neon", 0.88, 0.3, 0.1)],
     surface: [{ x: 0.7, y: 0.48, label: "cajón" }] },
-  { id: "estacionamiento", name: "Estacionamiento", interior: false, genres: ["Thriller", "Comedia", "Ciencia ficción"], tags: ["street", "secret"], keywords: ["auto", "coche", "estacionamiento", "garaje", "motor"],
+  { id: "estacionamiento", name: "Estacionamiento", interior: false, genres: ["Thriller", "Comedia", "Ciencia ficción", "Noir"], tags: ["street", "secret"], keywords: ["auto", "coche", "estacionamiento", "garaje", "motor"],
     palette: P("#3c4048", "#2e3238", "#4a4a50", "#3e3e44", "#d4533c"),
     furniture: [f("lamppost", 0.15, 0.4, 0.3), f("car", 0.36, 0.52, 0.26), f("car", 0.74, 0.52, 0.26), f("fence", 0.5, 0.32, 0.2), f("building", 0.9, 0.28, 0.28)],
     surface: [{ x: 0.5, y: 0.56, label: "capó" }] },
-  { id: "departamento", name: "Departamento", interior: true, genres: ["Thriller", "Romance", "Comedia", "Drama"], tags: ["home", "intimate", "secret"], keywords: ["departamento", "apartamento", "vigilancia", "ventana", "cama", "dormitorio"],
+  { id: "departamento", name: "Departamento", interior: true, genres: ["Thriller", "Romance", "Comedia", "Drama", "Noir"], tags: ["home", "intimate", "secret"], keywords: ["departamento", "apartamento", "vigilancia", "ventana", "cama", "dormitorio"],
     palette: P("#6a6068", "#584e56", "#8a7058", "#6e5844", "#e8a0a0"),
     furniture: [f("window", 0.18, 0.2, 0.24), f("curtain", 0.34, 0.2, 0.2), f("bed", 0.62, 0.46, 0.26), f("lamp", 0.86, 0.4, 0.18), f("shelf", 0.08, 0.42, 0.22), f("desk", 0.4, 0.52, 0.14)],
     surface: [{ x: 0.4, y: 0.5, label: "escritorio" }] },
@@ -62,39 +62,39 @@ export const LOCATIONS: Location[] = [
     palette: P("#c8b898", "#b0a07e", "#8a7a68", "#70624e", "#d4533c"),
     furniture: [f("window", 0.6, 0.2, 0.2), f("fridge", 0.1, 0.36, 0.28), f("counter", 0.34, 0.42, 0.26), f("table", 0.72, 0.52, 0.16), f("shelf", 0.45, 0.16, 0.12), f("plant", 0.93, 0.5, 0.14)],
     surface: [{ x: 0.72, y: 0.5, label: "mesa" }, { x: 0.34, y: 0.42, label: "mesada" }] },
-  { id: "tienda", name: "Tienda", interior: true, genres: ["Comedia", "Drama", "Romance"], tags: ["public", "work"], keywords: ["tienda", "mercado", "compras", "súper", "negocio", "mostrador"],
+  { id: "tienda", name: "Tienda", interior: true, genres: ["Comedia", "Drama", "Romance", "Western"], tags: ["public", "work"], keywords: ["tienda", "mercado", "compras", "súper", "negocio", "mostrador"],
     palette: P("#b8c4d0", "#9aa8b6", "#c0b8a8", "#a49c8c", "#e2b340"),
     furniture: [f("shelf", 0.14, 0.34, 0.3), f("shelf", 0.4, 0.34, 0.3), f("counter", 0.78, 0.42, 0.26), f("balloon", 0.62, 0.2, 0.1), f("crate", 0.55, 0.54, 0.1), f("neon", 0.88, 0.16, 0.1)],
     surface: [{ x: 0.78, y: 0.42, label: "mostrador" }] },
-  { id: "plaza", name: "Plaza del pueblo", interior: false, genres: ["Comedia", "Romance", "Drama"], tags: ["public", "nature", "climax"], keywords: ["plaza", "parque", "paseo", "fiesta", "pueblo", "banco"],
+  { id: "plaza", name: "Plaza del pueblo", interior: false, genres: ["Comedia", "Romance", "Drama", "Fantasía", "Western", "Aventura"], tags: ["public", "nature", "climax"], keywords: ["plaza", "parque", "paseo", "fiesta", "pueblo", "banco"],
     palette: P("#8ac0e0", "#6aa6cc", "#7aaa5a", "#689648", "#f0a0b0"),
     furniture: [f("tree", 0.14, 0.32, 0.34), f("lamppost", 0.34, 0.4, 0.28), f("bench", 0.5, 0.5, 0.18), f("tree", 0.78, 0.32, 0.34), f("balloon", 0.64, 0.24, 0.1), f("fence", 0.92, 0.46, 0.14)],
     surface: [{ x: 0.5, y: 0.5, label: "banco" }] },
-  { id: "playa", name: "Playa al borde del mar", interior: false, genres: ["Romance", "Drama", "Ciencia ficción"], tags: ["nature", "intimate", "climax"], keywords: ["playa", "mar", "arena", "olas", "océano", "orilla"],
+  { id: "playa", name: "Playa al borde del mar", interior: false, genres: ["Romance", "Drama", "Ciencia ficción", "Fantasía", "Aventura"], tags: ["nature", "intimate", "climax"], keywords: ["playa", "mar", "arena", "olas", "océano", "orilla"],
     palette: P("#7ac0e8", "#5aa6d8", "#e0c890", "#c8ae78", "#f0a050"),
     furniture: [f("wave", 0.5, 0.36, 0.5), f("tree", 0.9, 0.34, 0.3), f("crate", 0.18, 0.56, 0.1), f("star", 0.3, 0.12, 0.05), f("lamppost", 0.08, 0.42, 0.26)],
     surface: [{ x: 0.18, y: 0.56, label: "cajón" }] },
-  { id: "terraza", name: "Terraza", interior: false, genres: ["Romance", "Drama", "Thriller"], tags: ["intimate", "climax", "home"], keywords: ["terraza", "balcón", "azotea", "ciudad", "atardecer", "baranda"],
+  { id: "terraza", name: "Terraza", interior: false, genres: ["Romance", "Drama", "Thriller", "Noir", "Fantasía", "Aventura"], tags: ["intimate", "climax", "home"], keywords: ["terraza", "balcón", "azotea", "ciudad", "atardecer", "baranda"],
     palette: P("#c88868", "#a86a58", "#7a6a60", "#665850", "#f0b870"),
     furniture: [f("building", 0.2, 0.26, 0.3), f("building", 0.7, 0.24, 0.34), f("fence", 0.5, 0.44, 0.3), f("table", 0.34, 0.54, 0.12), f("plant", 0.9, 0.5, 0.16), f("lamp", 0.1, 0.5, 0.16)],
     surface: [{ x: 0.34, y: 0.52, label: "mesa" }] },
-  { id: "restaurante", name: "Restaurante", interior: true, genres: ["Romance", "Comedia", "Drama"], tags: ["public", "intimate"], keywords: ["restaurante", "cena", "vino", "mesero", "comer"],
+  { id: "restaurante", name: "Restaurante", interior: true, genres: ["Romance", "Comedia", "Drama", "Noir"], tags: ["public", "intimate"], keywords: ["restaurante", "cena", "vino", "mesero", "comer"],
     palette: P("#5a2e34", "#4a2428", "#6a4a38", "#58392a", "#e8b86a"),
     furniture: [f("curtain", 0.15, 0.2, 0.22), f("painting", 0.4, 0.18, 0.12), f("curtain", 0.82, 0.2, 0.22), f("table", 0.3, 0.52, 0.14), f("table", 0.7, 0.52, 0.14), f("lamp", 0.5, 0.2, 0.14)],
     surface: [{ x: 0.3, y: 0.5, label: "mesa" }, { x: 0.7, y: 0.5, label: "mesa" }] },
-  { id: "casona", name: "Casona abandonada", interior: true, genres: ["Terror", "Thriller", "Drama"], tags: ["home", "secret", "climax"], keywords: ["casona", "mansión", "abandonada", "fantasma", "escalera", "polvo"],
+  { id: "casona", name: "Casona abandonada", interior: true, genres: ["Terror", "Thriller", "Drama", "Fantasía", "Western", "Aventura"], tags: ["home", "secret", "climax"], keywords: ["casona", "mansión", "abandonada", "fantasma", "escalera", "polvo"],
     palette: P("#3a3438", "#2c2630", "#4e4036", "#3c3028", "#8a2e34"),
     furniture: [f("window", 0.2, 0.2, 0.24), f("cobweb", 0.05, 0.1, 0.1), f("fireplace", 0.5, 0.36, 0.26), f("painting", 0.74, 0.2, 0.14), f("sofa", 0.84, 0.48, 0.18), f("shelf", 0.08, 0.42, 0.24), f("lamp", 0.34, 0.48, 0.14)],
     surface: [{ x: 0.5, y: 0.5, label: "repisa" }] },
-  { id: "bosque", name: "Bosque oscuro", interior: false, genres: ["Terror", "Drama", "Thriller"], tags: ["nature", "secret", "street"], keywords: ["bosque", "árboles", "campamento", "sendero", "montaña", "huella"],
+  { id: "bosque", name: "Bosque oscuro", interior: false, genres: ["Terror", "Drama", "Thriller", "Fantasía", "Aventura"], tags: ["nature", "secret", "street"], keywords: ["bosque", "árboles", "campamento", "sendero", "montaña", "huella"],
     palette: P("#1e2e28", "#16221e", "#2a3a28", "#223022", "#a8e0a0"),
     furniture: [f("tree", 0.1, 0.3, 0.4), f("tree", 0.3, 0.32, 0.36), f("tree", 0.62, 0.3, 0.4), f("tree", 0.88, 0.32, 0.38), f("crate", 0.5, 0.54, 0.08), f("fence", 0.45, 0.4, 0.16)],
     surface: [{ x: 0.5, y: 0.54, label: "tronco" }] },
-  { id: "sotano", name: "Sótano", interior: true, genres: ["Terror", "Thriller", "Ciencia ficción"], tags: ["secret", "climax"], keywords: ["sótano", "bodega", "escondite", "trampilla", "subsuelo"],
+  { id: "sotano", name: "Sótano", interior: true, genres: ["Terror", "Thriller", "Ciencia ficción", "Fantasía", "Aventura"], tags: ["secret", "climax"], keywords: ["sótano", "bodega", "escondite", "trampilla", "subsuelo"],
     palette: P("#34322e", "#26241f", "#44403a", "#38342e", "#d4533c"),
     furniture: [f("crate", 0.12, 0.46, 0.14), f("shelf", 0.32, 0.34, 0.26), f("lamp", 0.5, 0.14, 0.16), f("crate", 0.7, 0.5, 0.12), f("cobweb", 0.9, 0.1, 0.1), f("desk", 0.82, 0.5, 0.14)],
     surface: [{ x: 0.82, y: 0.48, label: "mesa" }] },
-  { id: "cementerio", name: "Cementerio", interior: false, genres: ["Terror", "Drama"], tags: ["nature", "climax", "intimate"], keywords: ["cementerio", "tumba", "funeral", "cruz", "luto"],
+  { id: "cementerio", name: "Cementerio", interior: false, genres: ["Terror", "Drama", "Fantasía", "Western"], tags: ["nature", "climax", "intimate"], keywords: ["cementerio", "tumba", "funeral", "cruz", "luto"],
     palette: P("#242a38", "#1a1f2c", "#2c3a2c", "#243024", "#c0c8d8"),
     furniture: [f("fence", 0.2, 0.34, 0.3), f("tomb", 0.3, 0.5, 0.16), f("tomb", 0.55, 0.46, 0.18), f("tree", 0.82, 0.3, 0.38), f("tomb", 0.7, 0.54, 0.14), f("lamppost", 0.08, 0.42, 0.24)],
     surface: [{ x: 0.55, y: 0.46, label: "lápida" }] },
@@ -110,7 +110,7 @@ export const LOCATIONS: Location[] = [
     palette: P("#14102a", "#0e0a20", "#262236", "#1c1a2c", "#ff4ad0"),
     furniture: [f("building", 0.1, 0.24, 0.38), f("building", 0.34, 0.2, 0.42), f("neon", 0.5, 0.26, 0.12), f("building", 0.7, 0.22, 0.4), f("lamppost", 0.9, 0.4, 0.28), f("car", 0.5, 0.56, 0.2)],
     surface: [{ x: 0.5, y: 0.56, label: "vehículo" }] },
-  { id: "desierto", name: "Planeta desierto", interior: false, genres: ["Ciencia ficción"], tags: ["nature", "street", "secret"], keywords: ["planeta", "desierto", "dunas", "exploración", "marte", "ruinas"],
+  { id: "desierto", name: "Planeta desierto", interior: false, genres: ["Ciencia ficción", "Western", "Aventura"], tags: ["nature", "street", "secret"], keywords: ["planeta", "desierto", "dunas", "exploración", "marte", "ruinas"],
     palette: P("#d09a68", "#b87c50", "#c8905c", "#b07a48", "#4ae0f0"),
     furniture: [f("star", 0.2, 0.1, 0.06), f("star", 0.7, 0.14, 0.05), f("capsule", 0.2, 0.42, 0.22), f("crate", 0.55, 0.54, 0.1), f("tomb", 0.82, 0.46, 0.16)],
     surface: [{ x: 0.55, y: 0.54, label: "caja" }] },
@@ -159,7 +159,9 @@ const ARC: Omit<ScriptScene, "n" | "weather">[] = [
 
 function weatherFor(genre: Genre, n: number, time: TimeOfDay): Weather {
   if (n === 9 || n === 10) return genre === "Comedia" ? "nublado" : "lluvia";
-  if (genre === "Terror") return time === "noche" ? "niebla" : "nublado";
+  if (genre === "Terror" || genre === "Fantasía") return time === "noche" ? "niebla" : "nublado";
+  if (genre === "Noir" && time === "noche") return n % 2 ? "lluvia" : "niebla";
+  if (genre === "Western" || genre === "Aventura") return "despejado";
   if (genre === "Comedia") return "despejado";
   if (genre === "Drama" && n % 5 === 3) return "nublado";
   if (genre === "Thriller" && time === "noche" && n % 2 === 0) return "lluvia";
@@ -264,6 +266,7 @@ const CAST = ["Nina", "Rey"];
 const COSTUMES: Record<Genre, string[]> = {
   Drama: ["Abrigo gris", "Camisa clara"], Thriller: ["Gabardina negra", "Saco oscuro"], Comedia: ["Camiseta colorida", "Delantal"],
   Terror: ["Camisón gastado", "Campera vieja"], Romance: ["Vestido rojo", "Traje azul"], "Ciencia ficción": ["Mono plateado", "Casco y chaqueta"],
+  Noir: ["Gabardina beige", "Sombrero y traje"], Fantasía: ["Capa bordada", "Túnica larga"], Western: ["Poncho y sombrero", "Chaleco de cuero"], Aventura: ["Ropa de expedición", "Chaleco de explorador"],
 };
 export function initialContinuity(genre: Genre): Continuity {
   return { props: [], cast: CAST.map((name, i) => ({ name, wet: false, costume: COSTUMES[genre][i % 2]! })), day: 1, time: "amanecer", lastWeather: "despejado", lastExterior: false, warnings: [] };

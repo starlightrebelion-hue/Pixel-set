@@ -1,5 +1,11 @@
 import type { Furn, Lighting, Location, Weather } from "@/game/scenery";
+import { drawGenreSet, type GenreId } from "@/game/genre-sets";
 import type { SetSnapshot } from "@/game/set-director";
+
+const GENRE_ID: Record<string, GenreId> = {
+  Drama: "drama", Thriller: "noir", Comedia: "comedy", Terror: "horror", Romance: "romance", "Ciencia ficción": "science-fiction",
+  Noir: "noir", Fantasía: "fantasy", Western: "western", Aventura: "adventure",
+};
 
 function shade(hex: string, amt: number) {
   const n = parseInt(hex.slice(1), 16);
@@ -58,6 +64,7 @@ export function drawScenery(ctx: CanvasRenderingContext2D, ox: number, oy: numbe
   const horizon = dh * 0.42;
   if (loc.id === "estudio" && studio?.naturalWidth) {
     ctx.drawImage(studio, ox, oy, dw, dh);
+    drawGenreSet(ctx, ox, oy, dw, dh, GENRE_ID[s.genre]);
   } else {
     if (loc.interior) {
       const g = ctx.createLinearGradient(0, oy, 0, oy + horizon); g.addColorStop(0, pal.wall); g.addColorStop(1, pal.wall2);
