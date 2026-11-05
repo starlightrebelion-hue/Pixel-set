@@ -172,7 +172,7 @@ export function FilmSet() {
       const foregroundPath = mapId === "set" ? getDioramaForegrounds(activeHud.scene, activeHud.genre).find((path) => maps.get(path)?.naturalWidth) : undefined;
       const stage = maps.get(selectedPath);
       if (stage?.naturalWidth) {
-        const scale = Math.max(cw / stage.naturalWidth, ch / stage.naturalHeight);
+        const scale = mapId === "set" ? Math.max(cw / stage.naturalWidth, ch / stage.naturalHeight) : Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);
         layout.dw = stage.naturalWidth * scale; layout.dh = stage.naturalHeight * scale;
         layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
         ctx.drawImage(stage, layout.ox, layout.oy, layout.dw, layout.dh);
