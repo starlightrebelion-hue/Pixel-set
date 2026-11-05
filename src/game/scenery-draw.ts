@@ -59,10 +59,18 @@ function drawFurn(ctx: CanvasRenderingContext2D, fu: Furn, ox: number, oy: numbe
 }
 
 /** Dibuja el escenario completo: fondo, muebles, utilería, luz y clima. */
-export function drawScenery(ctx: CanvasRenderingContext2D, ox: number, oy: number, dw: number, dh: number, s: SetSnapshot, t: number, studio?: HTMLImageElement | null) {
+export function drawScenery(ctx: CanvasRenderingContext2D, ox: number, oy: number, dw: number, dh: number, s: SetSnapshot, t: number, studio?: HTMLImageElement | null, backdrop?: HTMLImageElement | null) {
   const loc = s.location, pal = loc.palette, L = s.lighting;
   const horizon = dh * 0.42;
-  if (loc.id === "estudio" && studio?.naturalWidth) {
+  const painted = !!backdrop?.naturalWidth && loc.id !== "estudio";
+  if (painted && backdrop) {
+    // Fondo ilustrado (jpg/png) tipo "cover" sobre el encuadre del set.
+    const k = Math.max(dw / backdrop.naturalWidth, dh / backdrop.naturalHeight);
+    const sw = dw / k, sh = dh / k;
+    ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, dw, dh); ctx.clip();
+    ctx.drawImage(backdrop, (backdrop.naturalWidth - sw) / 2, (backdrop.naturalHeight - sh) / 2, sw, sh, ox, oy, dw, dh);
+    ctx.restore();
+  } else if (loc.id === "estudio" && studio?.naturalWidth) {
     ctx.drawImage(studio, ox, oy, dw, dh);
     drawGenreSet(ctx, ox, oy, dw, dh, GENRE_ID[s.genre]);
   } else {
@@ -79,7 +87,7 @@ export function drawScenery(ctx: CanvasRenderingContext2D, ox: number, oy: numbe
     ctx.strokeStyle = pal.floor2; ctx.lineWidth = 1;
     for (let y = oy + horizon + dh * 0.04; y < oy + dh; y += dh * 0.06) { ctx.beginPath(); ctx.moveTo(ox, y); ctx.lineTo(ox + dw, y); ctx.stroke(); }
   }
-  const sorted = [...s.dressing.items].sort((a, b) => (a.k === "rug" ? -1 : b.k === "rug" ? 1 : a.y - b.y));
+  const sorted = painted ? [] : [...s.dressing.items].sort((a, b) => (a.k === "rug" ? -1 : b.k === "rug" ? 1 : a.y - b.y));
   for (const it of sorted) drawFurn(ctx, it, ox, oy, dw, dh, loc, L.lamps, t, L.sky);
   ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.font = `${Math.round(dh * 0.05)}px sans-serif`;
   for (const p of s.dressing.props) ctx.fillText(p.icon, ox + p.x * dw, oy + p.y * dh);

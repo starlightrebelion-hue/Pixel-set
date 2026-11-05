@@ -147,6 +147,24 @@ export function FilmSet() {
 
     const sprites = new Map<string, HTMLImageElement>();
     const maps = new Map<MapId, HTMLImageElement>();
+    // Fondos ilustrados opcionales: public/set/locations/<id>.png (o .jpg). Si no existen, se usa el decorado de código.
+    const locImgs = new Map<string, HTMLImageElement | null>();
+    const getBackdrop = (id: string) => {
+      if (id === "estudio") return null;
+      if (!locImgs.has(id)) {
+        locImgs.set(id, null);
+        const exts = ["png", "jpg"];
+        const tryLoad = (i: number) => {
+          if (i >= exts.length) return;
+          const img = new Image();
+          img.onload = () => locImgs.set(id, img);
+          img.onerror = () => tryLoad(i + 1);
+          img.src = assetUrl(`/set/locations/${id}.${exts[i]}`);
+        };
+        tryLoad(0);
+      }
+      return locImgs.get(id) ?? null;
+    };
     let loaded = 0;
     const needed = CREW.length * POSES.length + Object.keys(MAP_FILES).length;
     const mark = () => { loaded += 1; if (loaded >= needed) setReady(true); };
@@ -197,7 +215,7 @@ export function FilmSet() {
           layout.dw = stage.naturalWidth * scale; layout.dh = stage.naturalHeight * scale;
         } else { layout.dw = cw; layout.dh = ch; }
         layout.ox = (cw - layout.dw) / 2; layout.oy = (ch - layout.dh) / 2;
-        drawScenery(ctx, layout.ox, layout.oy, layout.dw, layout.dh, director.snapshot(), anim, stage);
+        drawScenery(ctx, layout.ox, layout.oy, layout.dw, layout.dh, director.snapshot(), anim, stage, getBackdrop(director.snapshot().location.id));
       } else if (mapId === "guion" || mapId === "montaje") {
         if (stage && stage.naturalWidth) {
           const scale = Math.min(cw / stage.naturalWidth, ch / stage.naturalHeight);

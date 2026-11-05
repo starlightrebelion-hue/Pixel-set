@@ -1,0 +1,6 @@
+Fondos ilustrados por localización (opcional).
+Poné aquí una imagen por set, con el id como nombre: sala.png, cafe.jpg, callejon.png, bosque.jpg ...
+Ids: sala, cafe, hospital, estacion, oficina, callejon, estacionamiento, departamento, cocina, tienda, plaza, playa,
+terraza, restaurante, casona, bosque, sotano, cementerio, puente, laboratorio, ciudad-neon, desierto.
+Formato recomendado: 16:9 (1920x1080). Si falta la imagen, se dibuja el decorado por código.
+Los muebles de código se ocultan cuando hay fondo; la utilería, la luz y el clima se siguen aplicando encima.
