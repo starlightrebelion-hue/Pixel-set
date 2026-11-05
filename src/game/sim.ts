@@ -606,7 +606,9 @@ export function createSim(onLog: (line: LogLine) => void) {
         moving: p.visible && (p.state === "work" || p.state === "coffee" || p.carrying) && dist(p.x, p.y, p.tx, p.ty) > 0.02,
       })),
       phase, map, mapLabel: MAP_LABEL[map],
-      transitioning: !!transition,\n      genre: inferGenreFromScript(SCENES[sceneIndex] ?? SCENES[0]!),\n      genreLabel: GENRE_SETS[inferGenreFromScript(SCENES[sceneIndex] ?? SCENES[0]!)].label,
+      transitioning: !!transition,
+      genre: inferGenreFromScript(SCENES[sceneIndex] ?? SCENES[0]!),
+      genreLabel: GENRE_SETS[inferGenreFromScript(SCENES[sceneIndex] ?? SCENES[0]!)].label,
     };
   }
 
