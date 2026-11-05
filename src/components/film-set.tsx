@@ -282,9 +282,10 @@ export function FilmSet() {
         const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
         sim.drag(id, world.nx, world.ny);
       },
-      onCrewDrop: (id, sx, sy, r) => {
+      onCrewDrop: (id, sx, sy, r, moved) => {
         const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
-        sim.drop(id, world.nx, world.ny);
+        if (moved) sim.drop(id, world.nx, world.ny);
+        else sim.cancelDrag(id);
         sim.click(world.nx, world.ny);
       },
     });
