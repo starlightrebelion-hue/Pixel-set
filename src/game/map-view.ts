@@ -16,15 +16,15 @@ type TouchCamOpts = {
   camRef: { current: Camera };
   onCamChange: () => void;
   onTap: (sx: number, sy: number, rect: DOMRect) => void;
-  onCrewPointerDown?: (sx: number, sy: number, rect: DOMRect) => string | null;
-  onCrewDrag?: (id: string, sx: number, sy: number, rect: DOMRect) => void;
-  onCrewDrop?: (id: string, sx: number, sy: number, rect: DOMRect) => void;
+  onCrewPointerDown?: (sx: number, sy: number, rect: DOMRect) => CrewId | null;
+  onCrewDrag?: (id: CrewId, sx: number, sy: number, rect: DOMRect) => void;
+  onCrewDrop?: (id: CrewId, sx: number, sy: number, rect: DOMRect) => void;
 };
 
 /** Controles de cámara multi-touch / mouse: pan, pinch zoom, tap. */
 export function attachTouchCamera({ canvas, camRef, onCamChange, onTap, onCrewPointerDown, onCrewDrag, onCrewDrop }: TouchCamOpts) {
   let mode: "none" | "pan" | "pinch" | "tap" | "crew" = "none";
-  let draggingCrew: string | null = null;
+  let draggingCrew: CrewId | null = null;
   let panLastX = 0, panLastY = 0;
   let pinchStartDist = 0;
   let pinchStartZoom = 1;
