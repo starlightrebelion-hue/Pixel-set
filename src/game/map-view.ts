@@ -16,11 +16,17 @@ type TouchCamOpts = {
   camRef: { current: Camera };
   onCamChange: () => void;
   onTap: (sx: number, sy: number, rect: DOMRect) => void;
+  onCrewPointerDown?: (sx: number, sy: number, rect: DOMRect) => CrewId | null;
+  onCrewDrag?: (id: CrewId, sx: number, sy: number, rect: DOMRect) => void;
+  onCrewDrop?: (id: CrewId, sx: number, sy: number, rect: DOMRect, moved: boolean) => void;
+  onCrewCancel?: (id: CrewId) => void;
 };
 
 /** Controles de cámara multi-touch / mouse: pan, pinch zoom, tap. */
-export function attachTouchCamera({ canvas, camRef, onCamChange, onTap }: TouchCamOpts) {
-  let mode: "none" | "pan" | "pinch" | "tap" = "none";
+export function attachTouchCamera({ canvas, camRef, onCamChange, onTap, onCrewPointerDown, onCrewDrag, onCrewDrop, onCrewCancel }: TouchCamOpts) {
+  let mode: "none" | "pan" | "pinch" | "tap" | "crew" = "none";
+  let draggingCrew: CrewId | null = null;
+  let crewMoved = false;
   let panLastX = 0, panLastY = 0;
   let pinchStartDist = 0;
   let pinchStartZoom = 1;
@@ -37,10 +43,21 @@ export function attachTouchCamera({ canvas, camRef, onCamChange, onTap }: TouchC
       return;
     }
     if (activePointers.size === 2) {
+      if (mode === "crew" && draggingCrew) { onCrewCancel?.(draggingCrew); draggingCrew = null; crewMoved = false; }
       const pts = [...activePointers.values()];
       pinchStartDist = touchDist(pts[0]!, pts[1]!);
       pinchStartZoom = camRef.current.zoom;
       mode = "pinch";
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const crewId = onCrewPointerDown?.(e.clientX - rect.left, e.clientY - rect.top, rect) ?? null;
+    if (crewId) {
+      draggingCrew = crewId;
+      crewMoved = false;
+      mode = "crew";
+      tapStartX = e.clientX; tapStartY = e.clientY;
+      canvas.setPointerCapture(e.pointerId);
       return;
     }
     mode = "tap";
@@ -56,6 +73,12 @@ export function attachTouchCamera({ canvas, camRef, onCamChange, onTap }: TouchC
     if (!activePointers.has(e.pointerId)) return;
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
+    if (mode === "crew" && draggingCrew) {
+      const r = canvas.getBoundingClientRect();
+      if (Math.hypot(e.clientX - tapStartX, e.clientY - tapStartY) > 5) crewMoved = true;
+      if (crewMoved) onCrewDrag?.(draggingCrew, e.clientX - r.left, e.clientY - r.top, r);
+      return;
+    }
     if (mode === "pinch" && activePointers.size >= 2) {
       const pts = [...activePointers.values()];
       const d = touchDist(pts[0]!, pts[1]!);
@@ -93,8 +116,12 @@ export function attachTouchCamera({ canvas, camRef, onCamChange, onTap }: TouchC
       if (activePointers.size < 2) mode = "none";
       return;
     }
-    if (mode === "tap" && !tapMoved) {
-      const r = canvas.getBoundingClientRect();
+    const r = canvas.getBoundingClientRect();
+    if (mode === "crew" && draggingCrew) {
+      onCrewDrop?.(draggingCrew, e.clientX - r.left, e.clientY - r.top, r, crewMoved);
+      draggingCrew = null;
+      crewMoved = false;
+    } else if (mode === "tap" && !tapMoved) {
       onTap(e.clientX - r.left, e.clientY - r.top, r);
     }
     if (activePointers.size === 0) mode = "none";

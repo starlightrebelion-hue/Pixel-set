@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
-import { CREW, type CrewId, type MapId } from "@/game/crew";
+import { CREW, STATIONS, type CrewId, type MapId } from "@/game/crew";
 import { tintNoraFromGuion } from "@/game/nora-tint";
 import { createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
 import { GENRE_SLUGS } from "@/game/diorama-sets";
@@ -24,7 +24,7 @@ import {
   type Camera,
   focusWorld,
 } from "@/game/camera";
-import { attachMinimapJump, attachTouchCamera, pickCrewAt, screenToWorld } from "@/game/map-view";
+import { attachMinimapJump, attachTouchCamera, screenToWorld } from "@/game/map-view";
 
 const POSES = ["pose-1", "pose-2", "pose-3", "pose-4"] as const;
 const SPRITE_ASSETS = import.meta.glob<string>("../../assets/sprites/*/pose-*.png", {
@@ -198,24 +198,51 @@ export function FilmSet() {
       const g = mm.getContext("2d");
       if (!g) return;
       const w = mm.width, h = mm.height;
-      g.fillStyle = "#0a0e06"; g.fillRect(0, 0, w, h);
-      g.strokeStyle = "#3d5a1e"; g.strokeRect(0.5, 0.5, w - 1, h - 1);
-      g.strokeStyle = "#1e2e10";
-      for (let i = 0; i <= 8; i++) {
-        g.beginPath(); g.moveTo((i / 8) * w, 0); g.lineTo((i / 8) * w, h); g.stroke();
-        g.beginPath(); g.moveTo(0, (i / 8) * h); g.lineTo(w, (i / 8) * h); g.stroke();
+      const mapId = sim.map as MapId;
+      g.clearRect(0, 0, w, h);
+      g.fillStyle = mapId === "guion" ? "#5b4530" : mapId === "montaje" ? "#293b4b" : "#263126";
+      g.fillRect(0, 0, w, h);
+      g.save(); g.globalAlpha = 0.26; g.strokeStyle = "#b9c8a0"; g.lineWidth = .7;
+      for (let x=10;x<w;x+=12) { g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke(); }
+      for (let y=8;y<h;y+=12) { g.beginPath(); g.moveTo(0,y); g.lineTo(w,y); g.stroke(); }
+      g.restore();
+      const block = (x:number,y:number,bw:number,bh:number,color:string) => {
+        g.fillStyle=color; g.fillRect(x*w,y*h,bw*w,bh*h);
+        g.strokeStyle="rgba(235,225,190,.42)"; g.lineWidth=1;
+        g.strokeRect(x*w+.5,y*h+.5,bw*w-1,bh*h-1);
+      };
+      if (mapId === "guion") {
+        block(.04,.08,.18,.18,"#725034"); block(.28,.1,.17,.2,"#765536");
+        block(.56,.08,.16,.17,"#5d442f"); block(.78,.1,.16,.2,"#6c5136");
+        block(.22,.48,.18,.13,"#a07a4c"); block(.45,.54,.18,.13,"#a07a4c"); block(.67,.46,.13,.14,"#a07a4c");
+      } else if (mapId === "montaje") {
+        for (let i=0;i<4;i++) block(.06+i*.22,.1,.16,.2,i%2?"#315d70":"#284b60");
+        block(.08,.48,.2,.22,"#55546b"); block(.36,.48,.2,.22,"#4b5b6b"); block(.64,.48,.2,.22,"#55546b");
+      } else {
+        block(.08,.08,.2,.16,"#47503b"); block(.36,.08,.26,.17,"#3b4936"); block(.72,.08,.19,.17,"#47503b");
+        block(.12,.55,.16,.16,"#5a4933"); block(.72,.52,.17,.2,"#514936"); block(.42,.35,.17,.2,"#8b6740");
+      }
+      for (const station of Object.values(STATIONS[mapId])) {
+        if (!station) continue;
+        g.fillStyle="rgba(226,179,64,.36)"; g.beginPath(); g.arc(station.x*w,station.y*h,3.2,0,Math.PI*2); g.fill();
       }
       for (const p of sim.people.filter((x) => x.visible !== false)) {
-        g.fillStyle = p.id === "director" ? "#e2b340" : p.id === "marketing" ? "#5ec8c0" : "#9fbf5a";
-        g.fillRect(p.x * w - 2.5, p.y * h - 2.5, 5, 5);
+        const selected=selectedRef.current===p.id;
+        g.fillStyle=selected?"#fff0a0":p.state==="angry"?"#e45c48":p.state==="coffee"?"#6dc6d2":p.id==="director"?"#e2b340":p.id==="marketing"?"#6cc8bf":"#b4d77a";
+        g.beginPath(); g.arc(p.x*w,p.y*h,selected?4.2:2.8,0,Math.PI*2); g.fill();
+        if(selected){g.strokeStyle="#fff0a0";g.lineWidth=1;g.beginPath();g.arc(p.x*w,p.y*h,6.2,0,Math.PI*2);g.stroke();}
       }
-      const cam = camRef.current;
-      const vw = Math.min(w, w / cam.zoom) * 0.55;
-      const vh = Math.min(h, h / cam.zoom) * 0.55;
-      const cx = w * 0.5 - cam.panX / (cam.zoom * 8);
-      const cy = h * 0.52 - cam.panY / (cam.zoom * 8);
-      g.strokeStyle = "#e2b340"; g.lineWidth = 1.5;
-      g.strokeRect(cx - vw / 2, cy - vh / 2, vw, vh);
+      const r=canvas.getBoundingClientRect();
+      const corners=[
+        screenToWorld(0,0,camRef.current,r.width,r.height),
+        screenToWorld(r.width,0,camRef.current,r.width,r.height),
+        screenToWorld(r.width,r.height,camRef.current,r.width,r.height),
+        screenToWorld(0,r.height,camRef.current,r.width,r.height),
+      ];
+      g.beginPath();
+      corners.forEach((p,i)=>{const x=Math.max(0,Math.min(w,p.nx*w)),y=Math.max(0,Math.min(h,p.ny*h));if(i===0)g.moveTo(x,y);else g.lineTo(x,y);});
+      g.closePath();g.fillStyle="rgba(226,179,64,.10)";g.fill();g.strokeStyle="#ffe08a";g.lineWidth=1.7;g.stroke();
+      g.strokeStyle="rgba(255,240,180,.55)";g.lineWidth=1;g.strokeRect(.5,.5,w-1,h-1);
     };
 
     const draw = () => {
@@ -308,17 +335,26 @@ export function FilmSet() {
       onCamChange: bumpCam,
       onTap: (sx, sy, r) => {
         const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
-        const best = pickCrewAt(sim.people, world.nx, world.ny, 0.08);
-        if (best) {
-          setSelectedId(best);
-          sim.grab(world.nx, world.ny);
-        } else {
-          setSelectedId(null);
-          sim.click(world.nx, world.ny);
-        }
-        const sel = selectedRef.current;
-        if (sel) sim.drop(sel, world.nx, world.ny);
+        setSelectedId(null);
+        sim.click(world.nx, world.ny);
       },
+      onCrewPointerDown: (sx, sy, r) => {
+        const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
+        const id = sim.grab(world.nx, world.ny);
+        if (id) setSelectedId(id);
+        return id;
+      },
+      onCrewDrag: (id, sx, sy, r) => {
+        const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
+        sim.drag(id, world.nx, world.ny);
+      },
+      onCrewDrop: (id, sx, sy, r, moved) => {
+        const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
+        if (moved) sim.drop(id, world.nx, world.ny);
+        else sim.cancelDrag(id);
+        sim.click(world.nx, world.ny);
+      },
+      onCrewCancel: (id) => sim.cancelDrag(id),
     });
 
     let mmCleanup: (() => void) | null = null;
@@ -419,6 +455,53 @@ export function FilmSet() {
       else if (action === "team") sim.coordinate();
       else if (action === "pause") { if (sim.hud().paused) sim.accion(); else sim.corten(); }
     });
+  };
+
+  // Atajos de teclado (usan refs para ver siempre la ruta actual).
+  const keysRef = useRef({ route, push: routePush, back: routeBack });
+  keysRef.current = { route, push: routePush, back: routeBack };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable=true]")) return;
+      const k = keysRef.current;
+      const panelKeys: Record<string, string> = { F1: "scene", F2: "story", F3: "studio" };
+      if (panelKeys[event.key]) {
+        event.preventDefault();
+        if (k.route[0] !== "play") return;
+        const panel = panelKeys[event.key]!;
+        if (k.route.length === 2 && k.route[1] === panel) k.push(["play"]);
+        else k.push(["play", panel]);
+        return;
+      }
+      if (event.key === "Escape") {
+        if (k.route[0] === "play" && k.route.length > 1) k.back();
+        return;
+      }
+      if (event.key === "F4" || event.key === "F5" || event.key === "F6") {
+        event.preventDefault();
+        const sim = simRef.current;
+        if (event.key === "F6") {
+          camRef.current = resetCamera();
+          setCamTick((n) => n + 1);
+        } else if (sim) {
+          if (event.key === "F4") {
+            if (sim.hud().paused) sim.accion();
+            else sim.corten();
+          } else sim.coordinate();
+          setHud(sim.hud());
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const selectMap = (map: MapId) => {
+    run((sim) => { if (sim.hud().map !== map) sim.goMap(map); });
+    setSelectedId(null);
+    camRef.current = resetCamera();
+    setCamTick((n) => n + 1);
   };
 
   void camTick;
@@ -551,7 +634,15 @@ export function FilmSet() {
         <div>
           <p className="text-[10px] font-bold tracking-[0.22em] text-[#9fbf5a]">PIXEL SET · COMMAND CENTER</p>
           <h1 className="font-display text-xl text-white drop-shadow sm:text-3xl">Estudio en vivo</h1>
-          <p className="text-xs text-white/70">{hud.mood}</p>
+          <p className="text-xs text-white/70">{hud.mapLabel} · {hud.mood}</p>
+          <div className="pointer-events-auto mt-1 flex gap-1" role="tablist" aria-label="Cambiar sector">
+            {([["guion", "📜", "Guion"], ["set", "🎬", "Rodaje"], ["montaje", "✂️", "Montaje"]] as const).map(([id, icon, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={hud.map === id} aria-label={`Ir a ${label.toLowerCase()}`} onClick={() => selectMap(id)}
+                className={`rounded border px-2 py-1 text-[11px] font-bold ${hud.map === id ? "border-[#e2b340] bg-[#2a2410] text-[#e2b340]" : "border-[#4a6b28] bg-[#0a0e06]/90 text-[#c8d4a8]"}`}>
+                {icon}<span className="ml-1 hidden min-[380px]:inline">{label}</span>
+              </button>
+            ))}
+          </div>
           {hud.storyTitle && <p className="text-[11px] text-[#9fbf5a]">{hud.storyTitle} · Cap. {hud.chapterIndex}/{hud.chapterCount}: {hud.chapterTitle} · ♥ {hud.lives}</p>}
         </div>
         <div className="pointer-events-auto flex items-center gap-2"><button type="button" onClick={openMenu} className="rounded border border-[#4a6b28] bg-[#0a0e06]/90 px-2 py-1 text-[10px] font-bold text-[#9fbf5a]">MENÚ</button><div className="rounded border border-[#4a6b28] bg-[#0a0e06]/90 px-2 py-1 text-[10px] text-[#9fbf5a]">
