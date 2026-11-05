@@ -27,15 +27,26 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist "node_modules" (
-  echo Primera ejecucion: instalando dependencias...
+REM Comprobar el ejecutable real de Vite, no solo la carpeta node_modules.
+if not exist "node_modules\.bin\vite.cmd" (
+  echo No se encontro Vite. Sincronizando package.json y package-lock.json e instalando dependencias...
   call npm install
   if errorlevel 1 (
     echo.
     echo ERROR: No se pudieron instalar las dependencias.
+    echo Comprueba tu conexion a Internet y vuelve a ejecutar este archivo.
     pause
     exit /b 1
   )
+)
+
+REM Verificacion final para evitar el error "spawn vite ENOENT".
+if not exist "node_modules\.bin\vite.cmd" (
+  echo.
+  echo ERROR: Vite sigue sin estar instalado.
+  echo Ejecuta npm install manualmente y revisa los mensajes de error.
+  pause
+  exit /b 1
 )
 
 echo Iniciando Pixel Set...
