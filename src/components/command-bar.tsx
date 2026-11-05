@@ -129,7 +129,7 @@ export function CommandBar({
               </button>
             ))}
             <button type="button" onClick={() => onAction("pause")} className="sc-order">
-              <kbd>F4</kbd>{hud.paused ? <Play /> : <Pause />}<span>{hud.paused ? "SEGUIR" : "PAUSA"}</span>
+              <kbd>F4</kbd>{hud.paused ? <Play /> : <Pause />}<span>{hud.paused ? "SEGUIR" : hud.phase === "rolling" ? "CORTE" : "PAUSA"}</span>
             </button>
             <button type="button" onClick={() => onAction("coffee")} className="sc-order">
               <kbd>F5</kbd><Coffee /><span>COORDINAR</span>
