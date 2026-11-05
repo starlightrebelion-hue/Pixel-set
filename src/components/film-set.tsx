@@ -19,7 +19,7 @@ import {
   zoomAt,
   type Camera,
 } from "@/game/camera";
-import { attachMinimapJump, attachTouchCamera, pickCrewAt, screenToWorld } from "@/game/map-view";
+import { attachMinimapJump, attachTouchCamera, screenToWorld } from "@/game/map-view";
 
 const POSES = ["pose-1", "pose-2", "pose-3", "pose-4"] as const;
 const SPRITE_ASSETS = import.meta.glob<string>("../../assets/sprites/*/pose-*.png", {
@@ -269,16 +269,23 @@ export function FilmSet() {
       onCamChange: bumpCam,
       onTap: (sx, sy, r) => {
         const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
-        const best = pickCrewAt(sim.people, world.nx, world.ny, 0.08);
-        if (best) {
-          setSelectedId(best);
-          sim.grab(world.nx, world.ny);
-        } else {
-          setSelectedId(null);
-          sim.click(world.nx, world.ny);
-        }
-        const sel = selectedRef.current;
-        if (sel) sim.drop(sel, world.nx, world.ny);
+        setSelectedId(null);
+        sim.click(world.nx, world.ny);
+      },
+      onCrewPointerDown: (sx, sy, r) => {
+        const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
+        const id = sim.grab(world.nx, world.ny);
+        if (id) setSelectedId(id);
+        return id;
+      },
+      onCrewDrag: (id, sx, sy, r) => {
+        const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
+        sim.drag(id, world.nx, world.ny);
+      },
+      onCrewDrop: (id, sx, sy, r) => {
+        const world = screenToWorld(sx, sy, camRef.current, r.width, r.height);
+        sim.drop(id, world.nx, world.ny);
+        sim.click(world.nx, world.ny);
       },
     });
 
