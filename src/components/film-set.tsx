@@ -3,6 +3,7 @@ import { Clapperboard, Film, Library, Megaphone, Pause, TriangleAlert, Users } f
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
 import { CREW, stateLabel, type CrewId, type MapId } from "@/game/crew";
 import { COFFEE_SPOT, createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
+import { enhanceSim } from "@/game/enhance-sim";
 import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import { StoryDirector } from "@/components/story-director";
@@ -33,6 +34,7 @@ const INITIAL_HUD: Hud = {
   crisis: null, takeResult: null, onMarkReady: false, bonds: [],
 };
 
+function hudNum(v: number | undefined, d = 0) { return typeof v === "number" ? v : d; }
 function assetUrl(path: string) {
   if (typeof window === "undefined") return path;
   const prefix = previewPathPrefix(window.location.hostname, window.location.pathname) ?? "";
@@ -105,7 +107,8 @@ export function FilmSet() {
         g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.05); osc2.stop(t + 0.05);
       }
     };
-    const sim = createSim((line) => { blip(line.kind); setLog((prev) => [line, ...prev].slice(0, 40)); });
+    const raw = createSim((line) => { blip(line.kind); setLog((prev) => [line, ...prev].slice(0, 40)); });
+    const sim = enhanceSim(raw, (line) => { blip(line.kind); setLog((prev) => [line, ...prev].slice(0, 40)); });
     simRef.current = sim;
 
     const sprites = new Map<string, HTMLImageElement>();
@@ -290,24 +293,20 @@ export function FilmSet() {
         <canvas ref={canvasRef} className="h-full w-full touch-none cursor-grab active:cursor-grabbing" aria-label="Pixel Set" />
         {!ready && <p className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted">Preparando el set…</p>}
         {hud.phase === "rolling" && !hud.crisis && (
-          <div className="pointer-events-none absolute left-3 top-3 rounded bg-danger/90 px-2 py-1 text-xs font-bold tracking-widest text-white">
-            ● REC
-          </div>
+          <div className="pointer-events-none absolute left-3 top-3 rounded bg-danger/90 px-2 py-1 text-xs font-bold tracking-widest text-white">● REC</div>
         )}
         {hud.onMarkReady && hud.phase === "prep" && (
-          <div className="pointer-events-none absolute right-3 top-3 rounded bg-primary/90 px-2 py-1 text-xs font-bold text-bg">
-            MARCA LISTA
-          </div>
+          <div className="pointer-events-none absolute right-3 top-3 rounded bg-primary/90 px-2 py-1 text-xs font-bold text-bg">MARCA LISTA</div>
         )}
       </div>
       <section className="grid gap-3 rounded-md border border-primary/40 bg-surface p-3 sm:grid-cols-[1fr_auto_auto]">
         <div>
           <p className="text-xs font-bold tracking-[0.16em] text-primary">
-            MISIÓN · TOMA {hud.take} · {hud.mapLabel.toUpperCase()} · {hud.genre.toUpperCase()}
+            MISIÓN · TOMA {hud.take} · {hud.mapLabel.toUpperCase()} · {(hud.genre ?? "Drama").toUpperCase()}
           </p>
           <p className="mt-1 text-sm font-semibold text-fg">{hud.objective}</p>
           <p className="mt-1 text-xs text-muted">
-            Día: {hud.dayGoodTakes}/{hud.dayTarget} tomas buenas · ★ total {hud.totalStars}
+            Día: {hudNum(hud.dayGoodTakes)}/{hudNum(hud.dayTarget, 3)} tomas buenas · ★ total {hudNum(hud.totalStars)}
             {hud.onMarkReady ? " · ✓ Equipo en marca" : ""}
           </p>
         </div>
@@ -323,9 +322,9 @@ export function FilmSet() {
         </div>
       </section>
 
-      {hud.bonds.length > 0 && (
+      {(hud.bonds?.length ?? 0) > 0 && (
         <div className="flex flex-wrap gap-2 text-xs">
-          {hud.bonds.map((b) => (
+          {(hud.bonds ?? []).map((b) => (
             <span key={b.label} className="rounded-md border border-border bg-surface px-2 py-1 text-muted">
               {b.label}: <span className={b.level >= 60 ? "text-primary" : b.level < 40 ? "text-danger" : "text-fg"}>{b.level}</span>
             </span>
@@ -339,11 +338,11 @@ export function FilmSet() {
           <h2 className="mt-1 font-display text-xl text-fg">{hud.crisis.title}</h2>
           <p className="mt-2 text-sm text-muted">{hud.crisis.text}</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            <button type="button" onClick={() => run((s) => s.resolveCrisis("A"))}
+            <button type="button" onClick={() => run((s) => { if (typeof s.resolveCrisis === "function") s.resolveCrisis("A"); })}
               className="min-h-12 rounded-md border border-primary bg-primary/15 px-3 py-2 text-left text-sm font-semibold text-fg hover:bg-primary/25">
               {hud.crisis.optionA.label}
             </button>
-            <button type="button" onClick={() => run((s) => s.resolveCrisis("B"))}
+            <button type="button" onClick={() => run((s) => { if (typeof s.resolveCrisis === "function") s.resolveCrisis("B"); })}
               className="min-h-12 rounded-md border border-border bg-bg px-3 py-2 text-left text-sm font-semibold text-fg hover:border-primary">
               {hud.crisis.optionB.label}
             </button>
@@ -365,7 +364,7 @@ export function FilmSet() {
             Progreso del día: {hud.takeResult.dayGoodTakes}/{hud.takeResult.dayTarget} tomas buenas
             {hud.takeResult.dayComplete ? " — ¡Día completo!" : ""}
           </p>
-          <button type="button" onClick={() => run((s) => s.dismissTakeResult())}
+          <button type="button" onClick={() => run((s) => { if (typeof s.dismissTakeResult === "function") s.dismissTakeResult(); })}
             className="mt-4 min-h-11 rounded-md border border-primary bg-primary px-4 text-sm font-semibold text-bg">
             Continuar
           </button>
