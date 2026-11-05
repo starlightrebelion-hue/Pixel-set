@@ -211,7 +211,8 @@
   .sc-minimap { height:66px; }
   .sc-unit-portrait { display:none; }
   .sc-map-tab { padding:3px 3px; }
-  .sc-map-tab span { font-size:6px; }
+  .sc-map-tab span { display:none; }
+  .sc-map-tab { flex:1; justify-content:center; min-width:0; }
   .sc-resource-strip span:nth-child(4), .sc-resource-strip span:nth-child(5) { display:none; }
   .sc-order { min-height:31px; }
 }
