@@ -75,6 +75,7 @@ export function CommandBar({
                 key={id}
                 type="button"
                 onClick={() => onSelectMap(id)}
+                aria-label={`Ir a ${label.toLowerCase()}`}
                 aria-pressed={hud.map === id}
                 className={hud.map === id ? "sc-map-tab sc-map-tab-active" : "sc-map-tab"}
               >
