@@ -3,13 +3,18 @@ import { Clapperboard, Film, Library, Megaphone, Pause, TriangleAlert, Users } f
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
 import { CREW, stateLabel, type CrewId, type MapId } from "@/game/crew";
 import { COFFEE_SPOT, createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
-import { enhanceSim } from "@/game/enhance-sim";
+import { enhanceSim, type Enhanced } from "@/game/enhance-sim";
 import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import { SetDirectorPanel } from "@/components/set-director-panel";
 import { createSetDirector, type SetDirector, type SetSnapshot } from "@/game/set-director";
 import { drawScenery, drawTransition } from "@/game/scenery-draw";
+import { createCustomStory, isStoryDefinition, STORY_LIBRARY, type ChallengeStyle, type StoryDefinition, type StoryGenre } from "@/game/stories";
 import { StoryDirector } from "@/components/story-director";
+
+type Screen = "menu" | "stories" | "create" | "playing";
+
+const CUSTOM_STORIES_KEY = "pixel-set-custom-stories-v1";
 
 const POSES = ["pose-1", "pose-2", "pose-3", "pose-4"] as const;
 const SPRITE_ASSETS = import.meta.glob<string>("../../assets/sprites/*/pose-*.png", {
@@ -82,12 +87,31 @@ function drawCoffeeCorner(ctx: CanvasRenderingContext2D, x: number, y: number, s
 
 export function FilmSet() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const simRef = useRef<Sim | null>(null);
+  const simRef = useRef<Enhanced | null>(null);
   const directorRef = useRef<SetDirector | null>(null);
   const [snap, setSnap] = useState<SetSnapshot | null>(null);
   const [hud, setHud] = useState<Hud>(INITIAL_HUD);
   const [log, setLog] = useState<LogLine[]>(INITIAL_LOG);
   const [ready, setReady] = useState(false);
+  const gameActiveRef = useRef(false);
+  const [screen, setScreen] = useState<Screen>("menu");
+  const [customStories, setCustomStories] = useState<StoryDefinition[]>([]);
+  const [selectedStoryId, setSelectedStoryId] = useState(STORY_LIBRARY[0]!.id);
+  const [customTitle, setCustomTitle] = useState("");
+  const [customPremise, setCustomPremise] = useState("");
+  const [customGenre, setCustomGenre] = useState<StoryGenre>("Drama");
+  const [challengeStyle, setChallengeStyle] = useState<ChallengeStyle>("balanced");
+  const [storyError, setStoryError] = useState("");
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(CUSTOM_STORIES_KEY);
+      if (!stored) return;
+      const parsed: unknown = JSON.parse(stored);
+      if (Array.isArray(parsed)) setCustomStories(parsed.filter(isStoryDefinition).slice(0, 12));
+    } catch {
+      setCustomStories([]);
+    }
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas) return;
@@ -247,7 +271,7 @@ export function FilmSet() {
       let dt = (now - last) / 1000; last = now; if (dt > 0.1) dt = 0.1;
       acc += dt; anim += dt;
       director.step(dt);
-      while (acc >= 1 / 60) { sim.step(1 / 60); acc -= 1 / 60; }
+      while (gameActiveRef.current && acc >= 1 / 60) { sim.step(1 / 60); acc -= 1 / 60; }
       draw(); hudTick += dt;
       if (hudTick > 0.25) {
         hudTick = 0; const h = sim.hud(); setHud(h); setSnap(director.snapshot());
@@ -293,22 +317,171 @@ export function FilmSet() {
     };
   }, []);
 
-  const run = (fn: (sim: Sim) => void) => { const sim = simRef.current; if (!sim) return; fn(sim); setHud(sim.hud()); };
+
+  const availableStories = [...STORY_LIBRARY, ...customStories];
+  const selectedStory = availableStories.find((story) => story.id === selectedStoryId) ?? STORY_LIBRARY[0]!;
+  const startStory = (story: StoryDefinition = selectedStory) => {
+    const sim = simRef.current;
+    if (!sim) return;
+    gameActiveRef.current = true;
+    setLog([]);
+    sim.startStory(story);
+    setHud(sim.hud());
+    setScreen("playing");
+  };
+
+  const saveCustomStory = () => {
+    if (customTitle.trim().length < 3) {
+      setStoryError("Poné un título de al menos tres caracteres.");
+      return;
+    }
+    if (customPremise.trim().length < 12) {
+      setStoryError("Contá un poco más de qué trata la historia.");
+      return;
+    }
+    const story = createCustomStory(customTitle, customPremise, customGenre, challengeStyle);
+    const next = [...customStories.filter((item) => item.id !== story.id), story].slice(-12);
+    setCustomStories(next);
+    setSelectedStoryId(story.id);
+    setStoryError("");
+    try {
+      window.localStorage.setItem(CUSTOM_STORIES_KEY, JSON.stringify(next));
+    } catch {
+      setStoryError("La historia se creó, pero el navegador no permitió guardarla.");
+    }
+    setScreen("stories");
+  };
+
+  const openMenu = () => {
+    gameActiveRef.current = false;
+    setScreen("menu");
+  };
+
+  const run = (fn: (sim: Enhanced) => void) => { const sim = simRef.current; if (!sim) return; fn(sim); setHud(sim.hud()); };
   const btn = "inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-semibold text-fg hover:border-primary hover:text-primary";
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-3 px-3 py-3">
+      {screen !== "playing" && (
+        <section className="min-h-[calc(100vh-1.5rem)] rounded-lg border border-border bg-surface p-4 sm:p-7">
+          <header className="mb-8 flex items-center justify-between gap-3 border-b border-border pb-4">
+            <div>
+              <p className="text-xs font-bold tracking-[0.28em] text-primary">ESTUDIO INDEPENDIENTE</p>
+              <h1 className="font-display text-3xl leading-tight text-fg sm:text-4xl">PIXEL SET</h1>
+            </div>
+            <span className="rounded border border-primary/40 px-3 py-2 text-[10px] font-bold tracking-widest text-primary">DIRECTOR'S CUT</span>
+          </header>
+
+          {screen === "menu" && (
+            <div className="grid items-center gap-8 py-5 md:grid-cols-[1.2fr_0.8fr]">
+              <div>
+                <p className="mb-3 text-xs font-bold tracking-[0.22em] text-primary">EL RODAJE NUNCA SALE COMO ESTÁ PLANEADO</p>
+                <h2 className="font-display text-4xl leading-[1.02] text-fg sm:text-6xl">Una película.<br />Ocho personalidades.<br /><span className="text-primary">Un solo director.</span></h2>
+                <p className="mt-5 max-w-xl text-sm leading-6 text-muted">Gestioná un equipo de rodaje vivo. Cada integrante tiene su trabajo, sus tiempos y sus distracciones. Vos decidís cuándo intervenir para que la historia llegue al último plano.</p>
+                <div className="mt-7 grid max-w-md grid-cols-3 gap-2">
+                  <div className="rounded border border-border bg-bg p-3"><p className="font-display text-2xl text-primary">08</p><p className="text-[10px] text-muted">PROFESIONALES</p></div>
+                  <div className="rounded border border-border bg-bg p-3"><p className="font-display text-2xl text-primary">03</p><p className="text-[10px] text-muted">CAPÍTULOS</p></div>
+                  <div className="rounded border border-border bg-bg p-3"><p className="font-display text-2xl text-primary">03</p><p className="text-[10px] text-muted">INTENTOS</p></div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-primary/30 bg-bg p-4 sm:p-6">
+                <p className="mb-4 text-xs font-bold tracking-[0.2em] text-primary">MENÚ PRINCIPAL</p>
+                <div className="grid gap-3">
+                  <button type="button" onClick={() => setScreen("stories")} className="min-h-14 rounded border border-primary bg-primary px-4 text-left font-bold text-bg hover:brightness-110">NUEVA PARTIDA <span className="block text-xs font-normal opacity-80">Elegí una historia y empezá a rodar</span></button>
+                  <button type="button" onClick={() => setScreen("stories")} className="min-h-12 rounded border border-border px-4 text-left text-sm font-semibold text-fg hover:border-primary">MIS HISTORIAS <span className="block text-xs font-normal text-muted">Campañas disponibles: {availableStories.length}</span></button>
+                  <button type="button" onClick={() => { setStoryError(""); setScreen("create"); }} className="min-h-12 rounded border border-border px-4 text-left text-sm font-semibold text-fg hover:border-primary">CREAR HISTORIA <span className="block text-xs font-normal text-muted">Inventá el argumento de tu próxima película</span></button>
+                  <div className="mt-2 rounded border border-border p-3 text-xs leading-5 text-muted"><span className="font-bold text-fg">CÓMO SE JUEGA</span><br />Arrastrá a los personajes hasta su escritorio cuando se distraigan. Completá los objetivos del capítulo, administrá el estrés y usá las órdenes del director con criterio.</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {screen === "stories" && (
+            <div>
+              <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+                <div><p className="text-xs font-bold tracking-[0.2em] text-primary">SELECCIÓN DE CAMPAÑA</p><h2 className="font-display text-3xl text-fg">Elegí qué película vas a rodar</h2><p className="mt-1 text-sm text-muted">Cada historia tiene tres capítulos y objetivos diferentes.</p></div>
+                <button type="button" onClick={() => setScreen("menu")} className="rounded border border-border px-3 py-2 text-xs text-muted hover:text-fg">VOLVER</button>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {availableStories.map((story) => (
+                  <button key={story.id} type="button" onClick={() => setSelectedStoryId(story.id)} className={`rounded-lg border p-4 text-left transition-colors ${selectedStoryId === story.id ? "border-primary bg-primary/10" : "border-border bg-bg hover:border-primary/60"}`}>
+                    <div className="mb-2 flex items-center justify-between gap-2"><span className="text-[10px] font-bold tracking-[0.18em] text-primary">{story.genre.toUpperCase()}</span>{story.custom && <span className="rounded bg-primary/15 px-2 py-1 text-[9px] font-bold text-primary">TU HISTORIA</span>}</div>
+                    <h3 className="font-display text-2xl text-fg">{story.title}</h3>
+                    <p className="mt-2 text-sm leading-5 text-muted">{story.premise}</p>
+                    <p className="mt-3 text-[10px] font-bold tracking-widest text-muted">3 CAPÍTULOS · {story.chapters[0]?.timeLimit ?? 90}s EN EL PRIMERO</p>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button type="button" onClick={() => startStory()} className="min-h-12 rounded border border-primary bg-primary px-6 text-sm font-bold text-bg">COMENZAR: {selectedStory.title.toUpperCase()}</button>
+                <button type="button" onClick={() => { setStoryError(""); setScreen("create"); }} className="min-h-12 rounded border border-border px-5 text-sm font-semibold text-fg hover:border-primary">+ CREAR OTRA HISTORIA</button>
+              </div>
+            </div>
+          )}
+
+          {screen === "create" && (
+            <div className="mx-auto max-w-2xl">
+              <div className="mb-5 flex items-end justify-between gap-3">
+                <div><p className="text-xs font-bold tracking-[0.2em] text-primary">TALLER DE GUION</p><h2 className="font-display text-3xl text-fg">Creá tu historia</h2><p className="mt-1 text-sm text-muted">Definí la película. Pixel Set arma una campaña de tres capítulos a partir de tu idea.</p></div>
+                <button type="button" onClick={() => setScreen("menu")} className="rounded border border-border px-3 py-2 text-xs text-muted hover:text-fg">VOLVER</button>
+              </div>
+              <div className="grid gap-4 rounded-lg border border-border bg-bg p-4 sm:p-6">
+                <label className="grid gap-2 text-xs font-bold tracking-wider text-fg">TÍTULO DE LA PELÍCULA
+                  <input value={customTitle} onChange={(event) => setCustomTitle(event.target.value)} maxLength={48} placeholder="Ej. La ciudad de los silencios" className="min-h-11 rounded border border-border bg-surface px-3 text-sm font-normal tracking-normal text-fg outline-none focus:border-primary" />
+                </label>
+                <label className="grid gap-2 text-xs font-bold tracking-wider text-fg">¿DE QUÉ TRATA?
+                  <textarea value={customPremise} onChange={(event) => setCustomPremise(event.target.value)} maxLength={220} rows={4} placeholder="Un equipo encuentra una grabación que cambia el sentido de la película..." className="resize-y rounded border border-border bg-surface px-3 py-3 text-sm font-normal tracking-normal text-fg outline-none focus:border-primary" />
+                  <span className="text-right text-[10px] font-normal text-muted">{customPremise.length}/220</span>
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-2 text-xs font-bold tracking-wider text-fg">GÉNERO
+                    <select value={customGenre} onChange={(event) => setCustomGenre(event.target.value as StoryGenre)} className="min-h-11 rounded border border-border bg-surface px-3 text-sm font-normal tracking-normal text-fg">
+                      <option value="Drama">Drama</option><option value="Comedia">Comedia</option><option value="Suspenso">Suspenso</option><option value="Documental">Documental</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-2 text-xs font-bold tracking-wider text-fg">ESTILO DE DESAFÍO
+                    <select value={challengeStyle} onChange={(event) => setChallengeStyle(event.target.value as ChallengeStyle)} className="min-h-11 rounded border border-border bg-surface px-3 text-sm font-normal tracking-normal text-fg">
+                      <option value="balanced">Equilibrado</option><option value="deadline">A contrarreloj</option><option value="team">Cuidar al equipo</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="rounded border border-primary/20 p-3 text-xs leading-5 text-muted">Tu historia tendrá tres capítulos. El estilo elegido cambia los tiempos, la calidad exigida, las recuperaciones manuales y el límite de estrés. Se guarda en este navegador.</div>
+                {storyError && <p role="alert" className="text-sm text-danger">{storyError}</p>}
+                <div className="flex flex-wrap gap-3">
+                  <button type="button" onClick={saveCustomStory} className="min-h-12 rounded border border-primary bg-primary px-6 text-sm font-bold text-bg">GUARDAR HISTORIA</button>
+                  <button type="button" onClick={() => setScreen("stories")} className="min-h-12 rounded border border-border px-5 text-sm font-semibold text-fg">CANCELAR</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+      <div className={screen === "playing" ? "flex flex-col gap-3" : "hidden"}>
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <p className="text-xs font-semibold tracking-[0.22em] text-primary">SET DE RODAJE</p>
           <h1 className="font-display text-3xl leading-none text-fg">Pixel Set</h1>
           <p className="mt-1 text-sm text-muted">Guion → set → ¡corte! → cinta a montaje.</p>
         </div>
-        <p className="max-w-xs text-sm text-fg">{hud.mood}</p>
+        <div className="flex items-center gap-3"><p className="max-w-xs text-sm text-fg">{hud.mood}</p><button type="button" onClick={openMenu} className="rounded border border-border px-3 py-2 text-[10px] font-bold tracking-widest text-muted hover:border-primary hover:text-fg">MENÚ</button></div>
       </header>
       <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border bg-bg">
         <canvas ref={canvasRef} className="h-full w-full touch-none cursor-grab active:cursor-grabbing" aria-label="Pixel Set" />
         {!ready && <p className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted">Preparando el set…</p>}
+        {(hud.campaignComplete || hud.gameOver) && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 p-4">
+            <div className="w-full max-w-md rounded-lg border border-primary/50 bg-surface p-5 text-center shadow-2xl">
+              <p className="text-[10px] font-bold tracking-[0.24em] text-primary">{hud.campaignComplete ? "PELÍCULA TERMINADA" : hud.gameOver ? "FIN DE LA JORNADA" : "CAPÍTULO FALLIDO"}</p>
+              <h2 className="mt-2 font-display text-3xl text-fg">{hud.campaignComplete ? "¡Lo lograron!" : hud.gameOver ? "Se acabaron los intentos" : "La toma no llegó"}</h2>
+              <p className="mt-3 text-sm leading-5 text-muted">{hud.campaignComplete ? `Terminaste "${hud.storyTitle}". El equipo consiguió cerrar la historia.` : hud.gameOver ? "El equipo agotó sus tres intentos. Podés probar otra campaña o diseñar una nueva." : `No se cumplió el objetivo de "${hud.chapterTitle}". Todavía quedan ${hud.lives} intentos.`}</p>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                
+                <button type="button" onClick={() => { gameActiveRef.current = false; setScreen("stories"); }} className="min-h-11 rounded border border-border px-4 text-xs font-bold text-fg">ELEGIR OTRA HISTORIA</button>
+                <button type="button" onClick={openMenu} className="min-h-11 rounded border border-border px-4 text-xs font-bold text-fg">MENÚ PRINCIPAL</button>
+              </div>
+            </div>
+          </div>
+        )}
         {hud.phase === "rolling" && !hud.crisis && (
           <div className="pointer-events-none absolute left-3 top-3 rounded bg-danger/90 px-2 py-1 text-xs font-bold tracking-widest text-white">● REC</div>
         )}
@@ -322,6 +495,8 @@ export function FilmSet() {
             MISIÓN · TOMA {hud.take} · {hud.mapLabel.toUpperCase()} · {(snap?.genre ?? hud.genre ?? "Drama").toUpperCase()}
           </p>
           <p className="mt-1 text-sm font-semibold text-fg">{hud.objective}</p>
+          {hud.storyTitle && <p className="mt-1 text-xs text-primary">{hud.storyTitle} · Capítulo {hud.chapterIndex}/{hud.chapterCount}: {hud.chapterTitle} · ♥ {hud.lives}</p>}
+          {hud.chapterBriefing && <p className="mt-1 text-xs text-muted">{hud.chapterBriefing}</p>}
           <p className="mt-1 text-xs text-muted">
             Día: {hudNum(hud.dayGoodTakes)}/{hudNum(hud.dayTarget, 3)} tomas buenas · ★ total {hudNum(hud.totalStars)}
             {hud.onMarkReady ? " · ✓ Equipo en marca" : ""}
@@ -426,6 +601,7 @@ export function FilmSet() {
       {snap && directorRef.current && <SetDirectorPanel snap={snap} director={directorRef.current} />}
       <StoryDirector onDecision={(choice) => run((sim) => sim.storyDecision(choice.consequence, choice.effects.quality ?? 0, choice.effects.tension ?? 0, choice.effects.morale ?? 0))} />
       <AdvisorPanel />
+      </div>
     </main>
   );
 }

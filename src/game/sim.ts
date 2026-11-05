@@ -50,6 +50,8 @@ export type Hud = {
   genre?: string; unlockedGenres?: string[];
   crisis?: Crisis | null; takeResult?: TakeResult | null;
   onMarkReady?: boolean; bonds?: BondInfo[];
+  storyTitle?: string; storyPremise?: string; chapterTitle?: string; chapterBriefing?: string;
+  chapterIndex?: number; chapterCount?: number; lives?: number; campaignComplete?: boolean; gameOver?: boolean;
 };
 type Chat = { a: CrewId; b: CrewId; line: string; reply: string; said: boolean; age: number };
 
