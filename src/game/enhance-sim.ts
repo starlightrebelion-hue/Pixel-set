@@ -1,6 +1,7 @@
 import { DEFAULT_STORY, type StoryDefinition } from "@/game/stories";
 import { emptyCounters, missionsFor, viewMissions, type MissionDef } from "@/game/missions";
 import { DEPARTMENTS, computeEffects, deptOf, type BoostKey, type DeptView, type Effects } from "@/game/departments";
+import { BANKRUPT_AT, HIRE_FEE, INCOME, SEVERANCE, START_BUDGET, UPGRADE_FEE, initialStaff, payrollOf, staffView, type LedgerEntry } from "@/game/studio";
 import type { CrewId } from "@/game/crew";
 import type { Hud, LogLine, Sim } from "@/game/sim";
 
@@ -21,6 +22,7 @@ type TakeResult = {
   dayGoodTakes: number;
   dayTarget: number;
   dayComplete: boolean;
+  money?: { income: number; payroll: number; net: number; budget: number };
 };
 
 const GENRES = ["Drama", "Thriller", "Comedia"] as const;
@@ -60,6 +62,9 @@ export type Enhanced = Sim & {
   startStory: (story: StoryDefinition) => void;
   resolveCrisis: (pick: "A" | "B") => void;
   orderCrew: (crewId: CrewId, orderId: string) => { ok: boolean; message: string };
+  hire: (crewId: CrewId, level: 1 | 2) => { ok: boolean; message: string };
+  upgrade: (crewId: CrewId) => { ok: boolean; message: string };
+  fire: (crewId: CrewId) => { ok: boolean; message: string };
   setConditions: (c: { darkness: number }) => void;
   dismissTakeResult: () => void;
   __enhanced?: boolean;
@@ -84,6 +89,16 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   let chapterIdx = 0, lives = 3, campaignComplete = false, gameOver = false;
   const chapter = () => story.chapters[chapterIdx] ?? story.chapters[story.chapters.length - 1]!;
   const DAY_TARGET_FN = () => 2 + chapterIdx;
+  // Estudio: presupuesto, plantilla y libro de cuentas
+  let budget = START_BUDGET;
+  const staff = initialStaff(DEPARTMENTS.map((d) => d.id));
+  let ledger: LedgerEntry[] = [];
+  let gameOverReason: "lives" | "bankrupt" | null = null;
+  const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(Math.round(n)).toLocaleString("es-AR")}`;
+  function book(label: string, amount: number) {
+    budget += amount;
+    ledger = [{ id: Date.now() + Math.random(), label, amount }, ...ledger].slice(0, 10);
+  }
   // Departamentos: eficiencia por rol, refuerzos temporales y enfriamientos de órdenes
   const eff = Object.fromEntries(DEPARTMENTS.map((d) => [d.id, 1])) as Record<CrewId, number>;
   const boosts: Partial<Record<BoostKey, number>> = {};
@@ -131,7 +146,7 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     if (good) { counters.good_takes += 1; if (stressNow <= chapter().stressLimit) counters.clean_takes += 1; }
     if (stars === 0 && !gameOver) {
       lives = Math.max(0, lives - 1);
-      if (lives === 0) { gameOver = true; onLog({ id: Date.now(), who: "Marcos", text: "Nos quedamos sin intentos. Fin de la jornada.", kind: "angry" }); }
+      if (lives === 0) { gameOver = true; gameOverReason = "lives"; onLog({ id: Date.now(), who: "Marcos", text: "Nos quedamos sin intentos. Fin de la jornada.", kind: "angry" }); }
       else onLog({ id: Date.now(), who: "Marcos", text: `Toma perdida. Quedan ${lives} intentos.`, kind: "angry" });
     }
     if (dayGoodTakes >= 2 && !unlockedGenres.includes("Thriller")) {
@@ -142,7 +157,17 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
       unlockedGenres = [...unlockedGenres, "Comedia"];
       onLog({ id: Date.now(), who: "Sol", text: "Hay material para una comedia.", kind: "ok" });
     }
+    // Ingresos y sueldos de la toma
+    const income = stars * INCOME.perStar + (good ? INCOME.goodBonus : 0);
+    const payroll = payrollOf(staff);
+    book(`Toma: ${"★".repeat(stars) || "sin estrellas"}`, income);
+    if (payroll > 0) book("Sueldos del equipo", -payroll);
+    if (budget <= BANKRUPT_AT && !gameOver) {
+      gameOver = true; gameOverReason = "bankrupt";
+      onLog({ id: Date.now() + Math.random(), who: "Marcos", text: "El estudio quebró: no hay presupuesto para seguir.", kind: "angry" });
+    } else if (budget < 0) onLog({ id: Date.now() + Math.random(), who: "Marcos", text: `Estamos en números rojos (${money(budget)}). No podemos contratar.`, kind: "angry" });
     return {
+      money: { income, payroll, net: income - payroll, budget },
       stars,
       quality: Math.round(quality),
       good,
@@ -194,6 +219,7 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
 
   function advanceChapter() {
     dayGoodTakes = 0;
+    book(`Premio del capítulo ${chapterIdx + 1}`, INCOME.chapterPrize);
     if (chapterIdx + 1 >= story.chapters.length) { campaignComplete = true; setToast("🏆 ¡Película terminada!"); onLog({ id: Date.now(), who: "Rey", text: `¡Fin de "${story.title}"! El equipo terminó la película.`, kind: "dir" }); return; }
     chapterIdx += 1;
     counters = emptyCounters(); claimed = new Set(); defs = missionsFor(chapterIdx, chapter());
@@ -209,6 +235,7 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   }
 
   function targetEff(p: (typeof base.people)[number], remote: boolean) {
+    if (!p.employed) return 0;
     if (!p.visible) return remote ? 0.85 : 0;
     if (p.dragging) return 0.2;
     if (p.state === "sleep") return 0;
@@ -241,7 +268,8 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     const left = cooldowns[key] ?? 0;
     if (left > 0) return { ok: false, message: `${order.label}: disponible en ${Math.ceil(left)}s.` };
     if (eff[crewId] < 0.3) { base.speak(crewId, "No puedo ahora: no estoy en mi puesto.", "angry"); return { ok: false, message: `${dept.name} no está en su puesto.` }; }
-    const power = 0.6 + 0.4 * eff.director;
+    const lvl = staff[crewId] ?? 1;
+    const power = (0.6 + 0.4 * eff.director) * (lvl === 2 ? 1.2 : 1);
     const e = order.effect;
     let q = (e.quality ?? 0) * (e.quality && e.quality > 0 ? power : 1);
     let st = e.stress ?? 0;
@@ -252,12 +280,45 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     }
     base.adjust(q, st, e.time ?? 0);
     if (e.hype) hype = Math.min(100, hype + e.hype);
-    if (e.boost) boosts[e.boost.key] = e.boost.seconds;
+    if (e.boost) boosts[e.boost.key] = e.boost.seconds * (lvl === 2 ? 1.25 : 1);
     if (e.arm === "review") reviewArmed = true;
-    cooldowns[key] = order.cooldown;
+    cooldowns[key] = order.cooldown * (lvl === 2 ? 0.8 : 1);
     base.speak(crewId, say, q < 0 ? "angry" : "ok");
     setToast(`${order.icon} ${order.label}`);
     return { ok: true, message: say };
+  }
+
+  function hire(crewId: CrewId, level: 1 | 2): { ok: boolean; message: string } {
+    const name = deptOf(crewId)?.name ?? crewId;
+    if ((staff[crewId] ?? 0) !== 0) return { ok: false, message: `${name} ya tiene personal.` };
+    const fee = HIRE_FEE[level];
+    if (budget < fee) return { ok: false, message: `Falta presupuesto: ${money(fee)} (hay ${money(budget)}).` };
+    book(`Contratación ${level === 2 ? "senior" : "junior"} · ${name}`, -fee);
+    staff[crewId] = level;
+    base.setEmployed(crewId, true);
+    setToast(`🤝 ${name}: nuevo ${level === 2 ? "senior" : "junior"}`);
+    return { ok: true, message: `${name} contratado.` };
+  }
+  function upgrade(crewId: CrewId): { ok: boolean; message: string } {
+    const name = deptOf(crewId)?.name ?? crewId;
+    if (staff[crewId] !== 1) return { ok: false, message: "Sólo se puede mejorar a un junior." };
+    if (budget < UPGRADE_FEE) return { ok: false, message: `Falta presupuesto: ${money(UPGRADE_FEE)}.` };
+    book(`Ascenso a senior · ${name}`, -UPGRADE_FEE);
+    staff[crewId] = 2;
+    base.speak(crewId, "¡Gracias por la confianza! Voy a rendir más.", "ok");
+    setToast(`⭐ ${name}: ascendido a senior`);
+    return { ok: true, message: `${name} ahora es senior.` };
+  }
+  function fire(crewId: CrewId): { ok: boolean; message: string } {
+    const name = deptOf(crewId)?.name ?? crewId;
+    const lvl = staff[crewId] ?? 0;
+    if (crewId === "director") return { ok: false, message: "No se puede despedir a la dirección." };
+    if (lvl === 0) return { ok: false, message: `${name} ya está vacante.` };
+    book(`Indemnización · ${name}`, -SEVERANCE[lvl]);
+    staff[crewId] = 0;
+    base.setEmployed(crewId, false);
+    setToast(`👋 ${name}: puesto vacante`);
+    return { ok: true, message: `${name} despedido.` };
   }
 
   function setConditions(c: { darkness: number }) { darkness = Math.max(0, Math.min(1, c.darkness)); }
@@ -314,6 +375,9 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
       unlockedGenres: [...unlockedGenres],
       storyTitle: story.title, storyPremise: story.premise, chapterTitle: chapter().title, chapterBriefing: chapter().briefing,
       chapterIndex: chapterIdx + 1, chapterCount: story.chapters.length, lives, campaignComplete, gameOver,
+      budget: Math.round(budget), payroll: payrollOf(staff), ledger: ledger.slice(0, 6),
+      staff: DEPARTMENTS.map((d) => staffView(d.id, staff[d.id] ?? 0)),
+      gameOverReason,
       departments: departmentViews(h.phase),
       alerts: h.phase === "prep" || h.phase === "rolling" ? fx.alerts.filter(Boolean) : [],
       hype: Math.round(hype),
@@ -349,6 +413,8 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     for (const k of Object.keys(boosts)) delete boosts[k as BoostKey];
     for (const k of Object.keys(cooldowns)) delete cooldowns[k];
     hype = 0; reviewArmed = false;
+    budget = START_BUDGET; ledger = []; gameOverReason = null;
+    { const init = initialStaff(DEPARTMENTS.map((d) => d.id)); for (const d of DEPARTMENTS) { staff[d.id] = init[d.id]!; base.setEmployed(d.id, true, true); } }
     counters = emptyCounters(); claimed = new Set(); defs = missionsFor(0, chapter()); rescueBase = origHud().rescuesTotal ?? 0; toast = null;
     dayGoodTakes = 0; totalStars = 0; lastStars = 0; crisis = null; takeResult = null; crisisCooldown = 18;
     onLog({ id: Date.now(), who: "Rey", text: `Comienza "${story.title}". ${chapter().briefing}`, kind: "dir" });
@@ -361,6 +427,6 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
 
   // OJO: `{...base}` congelaría los getters (map, phase, shake); se copian los descriptores.
   const out = Object.defineProperties({}, Object.getOwnPropertyDescriptors(base)) as Enhanced;
-  Object.assign(out, { step, hud, accion, startStory, orderCrew, setConditions, resolveCrisis, dismissTakeResult, __enhanced: true });
+  Object.assign(out, { step, hud, accion, startStory, orderCrew, hire, upgrade, fire, setConditions, resolveCrisis, dismissTakeResult, __enhanced: true });
   return out;
 }

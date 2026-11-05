@@ -18,10 +18,11 @@ type Props = {
   onMainMenu: () => void;
   onStoryDecision: (c: StoryChoice) => void;
   onOrder: (crewId: CrewId, orderId: string) => void;
+  onStaff: (action: "hire1" | "hire2" | "upgrade" | "fire", crewId: CrewId) => void;
 };
 
 const TITLES: Record<string, string> = {
-  opts: "Opciones", missions: "Misiones", departments: "Departamentos", scene: "Dirigir escena", genre: "Género", place: "Lugar", time: "Hora del día", weather: "Clima",
+  opts: "Opciones", missions: "Misiones", departments: "Departamentos", production: "Producción y presupuesto", staff: "Contratación", scene: "Dirigir escena", genre: "Género", place: "Lugar", time: "Hora del día", weather: "Clima",
   dress: "Decorado", plan: "Plan de 15 escenas", script: "Escribir guion", continuity: "Continuidad", story: "Historia", studio: "Estudio y asesores", help: "Cómo jugar",
 };
 
@@ -42,8 +43,9 @@ function Tile({ icon, title, value, onClick }: { icon: string; title: string; va
 }
 
 /** Menús del juego: una decisión por pantalla, con Atrás / Cerrar y ruta visible. */
-export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu, onStoryDecision, onOrder }: Props) {
+export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu, onStoryDecision, onOrder, onStaff }: Props) {
   const [script, setScript] = useState("");
+  const [confirmFire, setConfirmFire] = useState<string | null>(null);
   const key = path[path.length - 1] ?? "opts";
   const go = (...next: string[]) => nav.push(["play", ...next]);
   const crumbs = path.map((p) => TITLES[p] ?? p);
@@ -55,6 +57,8 @@ export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu,
     body = (
       <div className="grid gap-2">
         <p className="text-sm text-[#c8d4a8]">¿Qué querés hacer?</p>
+        <Tile icon="💰" title="Producción y presupuesto" value={`${(hud.budget ?? 0) < 0 ? "-" : ""}$${Math.abs(hud.budget ?? 0).toLocaleString("es-AR")} · sueldos $${hud.payroll ?? 0} por toma`} onClick={() => go("production")} />
+        <Tile icon="👥" title="Contratación" value="Contratar, ascender o despedir" onClick={() => go("staff")} />
         <Tile icon="🏭" title="Departamentos" value={(hud.alerts?.length ?? 0) > 0 ? `⚠ ${hud.alerts![0]}` : "Estado y órdenes de cada área"} onClick={() => go("departments")} />
         <Tile icon="🎯" title="Misiones" value={`Capítulo ${hud.chapterIndex ?? 1}/${hud.chapterCount ?? 1}`} onClick={() => go("missions")} />
         <Tile icon="📍" title="Dirigir escena" value="Lugar, hora, clima y decorado" onClick={() => go("scene")} />
@@ -90,6 +94,60 @@ export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu,
           <p className="mb-1 text-xs font-bold tracking-widest text-[#9fbf5a]">OPCIONALES · con recompensa en el set</p>
           <ul className="grid gap-2">{ms.filter((m) => !m.required).map(row)}</ul>
         </div>
+      </div>
+    );
+  } else if (key === "production") {
+    const m = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("es-AR")}`;
+    const budget = hud.budget ?? 0;
+    const ledger = hud.ledger ?? [];
+    body = (
+      <div className="grid gap-3">
+        <div className="rounded-lg border border-[#3d5a1e]/70 bg-[#0a0e06] p-3 text-center">
+          <p className="text-[10px] font-bold tracking-widest text-[#9fbf5a]">PRESUPUESTO</p>
+          <p className={`font-display text-3xl ${budget < 0 ? "text-[#f0a090]" : "text-[#e2b340]"}`}>{m(budget)}</p>
+          <p className="text-xs text-[#a8b88a]">Sueldos: {m(hud.payroll ?? 0)} por toma · Hype: {hud.hype ?? 0}%</p>
+          {budget < 0 && <p className="mt-1 text-xs text-[#f0a090]">En números rojos: no se puede contratar. Con -$3.000 el estudio quiebra.</p>}
+        </div>
+        <div className="rounded-lg border border-[#3d5a1e] bg-[#0f140a] p-3 text-xs text-[#c8d4a8]">
+          <p className="font-bold text-white">¿Cómo se gana dinero?</p>
+          <p>Cada toma paga $900 por estrella y $600 más si es buena. Cada capítulo cerrado da $2.000. Después se descuentan los sueldos de todo el equipo.</p>
+        </div>
+        <div>
+          <p className="mb-1 text-xs font-bold tracking-widest text-[#9fbf5a]">ÚLTIMOS MOVIMIENTOS</p>
+          {ledger.length === 0 ? <p className="text-sm text-[#a8b88a]">Todavía no hay movimientos.</p> : (
+            <ul className="grid gap-1">
+              {ledger.map((l) => <li key={l.id} className="flex justify-between gap-2 rounded border border-[#2a3a18] bg-[#0f140a] px-2 py-1.5 text-sm text-white"><span className="truncate">{l.label}</span><span className={l.amount < 0 ? "text-[#f0a090]" : "text-[#9fbf5a]"}>{l.amount < 0 ? "" : "+"}{m(l.amount)}</span></li>)}
+            </ul>
+          )}
+        </div>
+        <button type="button" className={big(false)} onClick={() => go("staff")}>👥 Ir a Contratación</button>
+      </div>
+    );
+  } else if (key === "staff") {
+    const m = (n: number) => `$${n.toLocaleString("es-AR")}`;
+    const budget = hud.budget ?? 0;
+    const names = Object.fromEntries((hud.people ?? []).map((p) => [p.id, `${p.name} · ${p.role}`]));
+    const color = { 0: "#7a8f4a", 1: "#9fbf5a", 2: "#e2b340" } as const;
+    body = (
+      <div className="grid gap-2">
+        <p className="text-xs text-[#a8b88a]">Presupuesto: <strong className="text-white">{budget < 0 ? "-" : ""}{m(Math.abs(budget))}</strong>. Un puesto vacante saca a la persona del mapa y su área deja de funcionar. Los senior dan órdenes más fuertes y con menos espera.</p>
+        {(hud.staff ?? []).map((st) => (
+          <div key={st.id} className="rounded-lg border border-[#3d5a1e] bg-[#0f140a] p-3">
+            <p className="flex items-center justify-between gap-2 text-sm font-bold text-white"><span className="min-w-0 truncate">{names[st.id] ?? st.id}</span><span className="shrink-0 text-xs" style={{ color: color[st.level] }}>{st.levelName}{st.salary ? ` · ${m(st.salary)}/toma` : ""}</span></p>
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              {st.hireJunior !== null && <button type="button" className={big(false) + " !min-h-11 text-xs"} onClick={() => onStaff("hire1", st.id)}>🤝 Contratar junior<span className="block text-[10px] font-normal text-[#a8b88a]">{m(st.hireJunior)}</span></button>}
+              {st.hireSenior !== null && <button type="button" className={big(false) + " !min-h-11 text-xs"} onClick={() => onStaff("hire2", st.id)}>⭐ Contratar senior<span className="block text-[10px] font-normal text-[#a8b88a]">{m(st.hireSenior)}</span></button>}
+              {st.upgrade !== null && <button type="button" className={big(false) + " !min-h-11 text-xs"} onClick={() => onStaff("upgrade", st.id)}>⭐ Ascender a senior<span className="block text-[10px] font-normal text-[#a8b88a]">{m(st.upgrade)}</span></button>}
+              {st.canFire && (
+                <button type="button" className={`min-h-11 rounded-lg border-2 px-2 py-1 text-xs font-bold ${confirmFire === st.id ? "border-[#d4533c] bg-[#3a1814] text-[#f0a090]" : "border-[#3d5a1e] bg-[#0f140a] text-white"}`}
+                  onClick={() => { if (confirmFire === st.id) { onStaff("fire", st.id); setConfirmFire(null); } else setConfirmFire(st.id); }}>
+                  {confirmFire === st.id ? "Tocá otra vez: despedir" : "👋 Despedir"}<span className="block text-[10px] font-normal text-[#a8b88a]">Indemnización {m(st.severance)}</span>
+                </button>
+              )}
+              {st.id === "director" && <p className="col-span-2 text-xs text-[#7a8f4a]">La dirección no se puede despedir.</p>}
+            </div>
+          </div>
+        ))}
       </div>
     );
   } else if (key === "departments") {

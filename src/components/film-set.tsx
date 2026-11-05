@@ -461,8 +461,17 @@ export function FilmSet() {
     if (!r.ok) { setToastText(r.message); window.setTimeout(() => setToastText(null), 2600); }
     setHud(sim.hud());
   };
+  const onStaff = (action: "hire1" | "hire2" | "upgrade" | "fire", crewId: CrewId) => {
+    const sim = simRef.current;
+    if (!sim) return;
+    const r = action === "hire1" ? sim.hire(crewId, 1) : action === "hire2" ? sim.hire(crewId, 2) : action === "upgrade" ? sim.upgrade(crewId) : sim.fire(crewId);
+    if (!r.ok) { setToastText(r.message); window.setTimeout(() => setToastText(null), 3200); }
+    setHud(sim.hud());
+  };
   const onGeneral = (action: GeneralActionId) => {
     if (action === "center") { zoom("reset"); return; }
+    if (action === "production") { routePush(["play", "production"]); return; }
+    if (action === "staff") { routePush(["play", "staff"]); return; }
     if (action === "departments") { routePush(["play", "departments"]); return; }
     if (action === "missions") { routePush(["play", "missions"]); return; }
     if (action === "scene") { routePush(["play", "scene"]); return; }
@@ -633,8 +642,8 @@ export function FilmSet() {
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 p-4">
             <div className="w-full max-w-md rounded-lg border border-primary/50 bg-surface p-5 text-center shadow-2xl">
               <p className="text-[10px] font-bold tracking-[0.24em] text-primary">{hud.campaignComplete ? "PELÍCULA TERMINADA" : hud.gameOver ? "FIN DE LA JORNADA" : "CAPÍTULO FALLIDO"}</p>
-              <h2 className="mt-2 font-display text-3xl text-fg">{hud.campaignComplete ? "¡Lo lograron!" : hud.gameOver ? "Se acabaron los intentos" : "La toma no llegó"}</h2>
-              <p className="mt-3 text-sm leading-5 text-muted">{hud.campaignComplete ? `Terminaste "${hud.storyTitle}". El equipo consiguió cerrar la historia.` : hud.gameOver ? "El equipo agotó sus tres intentos. Podés probar otra campaña o diseñar una nueva." : `No se cumplió el objetivo de "${hud.chapterTitle}". Todavía quedan ${hud.lives} intentos.`}</p>
+              <h2 className="mt-2 font-display text-3xl text-fg">{hud.campaignComplete ? "¡Lo lograron!" : hud.gameOver ? (hud.gameOverReason === "bankrupt" ? "El estudio quebró" : "Se acabaron los intentos") : "La toma no llegó"}</h2>
+              <p className="mt-3 text-sm leading-5 text-muted">{hud.campaignComplete ? `Terminaste "${hud.storyTitle}". El equipo consiguió cerrar la historia.` : hud.gameOver ? (hud.gameOverReason === "bankrupt" ? "El presupuesto cayó demasiado: no se puede seguir pagando al equipo. Probá otra campaña y cuidá los sueldos." : "El equipo agotó sus intentos. Podés probar otra campaña o diseñar una nueva.") : `No se cumplió el objetivo de "${hud.chapterTitle}". Todavía quedan ${hud.lives} intentos.`}</p>
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 
                 <button type="button" onClick={() => setScreen("stories")} className="min-h-11 rounded border border-border px-4 text-xs font-bold text-fg">ELEGIR OTRA HISTORIA</button>
@@ -682,6 +691,7 @@ export function FilmSet() {
         selectedId={selectedId}
         onCrewCommand={onCrewCommand}
         onOrder={onOrder}
+        onHire={(id, level) => onStaff(level === 1 ? "hire1" : "hire2", id)}
         onGeneral={onGeneral}
         onZoom={zoom}
         minimapRef={minimapRef}
@@ -718,6 +728,11 @@ export function FilmSet() {
             Calidad {hud.takeResult.quality} · {hud.takeResult.playback === "great" ? "Plano limpio, emoción clara." : hud.takeResult.playback === "ok" ? "Usable, con algún ruido." : "Fuera de foco / cortado."}
           </p>
           <p className="mt-2 text-sm font-semibold text-fg">{hud.takeResult.summary}</p>
+          {hud.takeResult.money && (
+            <p className="mt-1 text-xs text-muted">
+              Ingresos <span className="text-[#9fbf5a]">+${hud.takeResult.money.income.toLocaleString("es-AR")}</span> · Sueldos <span className="text-[#f0a090]">-${hud.takeResult.money.payroll.toLocaleString("es-AR")}</span> · Presupuesto <strong className="text-fg">{hud.takeResult.money.budget < 0 ? "-" : ""}${Math.abs(hud.takeResult.money.budget).toLocaleString("es-AR")}</strong>
+            </p>
+          )}
           <p className="mt-1 text-xs text-muted">
             Progreso del día: {hud.takeResult.dayGoodTakes}/{hud.takeResult.dayTarget} tomas buenas
             {hud.takeResult.dayComplete ? " — ¡Día completo!" : ""}
@@ -740,6 +755,7 @@ export function FilmSet() {
           onClose={() => routePush(["play"])}
           onMainMenu={() => routePush(["menu"])}
           onOrder={onOrder}
+          onStaff={onStaff}
           onStoryDecision={(choice) => run((sim) => sim.storyDecision(choice.consequence, choice.effects.quality ?? 0, choice.effects.tension ?? 0, choice.effects.morale ?? 0))}
         />
       )}

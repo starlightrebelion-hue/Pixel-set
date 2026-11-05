@@ -2,7 +2,7 @@ import type { Hud, LogLine } from "@/game/sim";
 import type { CrewId } from "@/game/crew";
 
 export type CrewCommandId = "station" | "coffee" | "praise" | "scold" | "wake" | "center" | "deselect";
-export type GeneralActionId = "action" | "cut" | "pause" | "team" | "scene" | "story" | "studio" | "center" | "options" | "missions" | "departments";
+export type GeneralActionId = "action" | "cut" | "pause" | "team" | "scene" | "story" | "studio" | "center" | "options" | "missions" | "departments" | "production" | "staff";
 
 type Props = {
   hud: Hud;
@@ -10,6 +10,7 @@ type Props = {
   selectedId: CrewId | null;
   onCrewCommand: (cmd: CrewCommandId) => void;
   onOrder: (crewId: CrewId, orderId: string) => void;
+  onHire: (crewId: CrewId, level: 1 | 2) => void;
   onGeneral: (action: GeneralActionId) => void;
   onZoom: (dir: "in" | "out" | "reset") => void;
   minimapRef: { current: HTMLCanvasElement | null };
@@ -22,7 +23,7 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 /** Barra inferior estilo StarCraft: minimapa + info + tarjeta de comandos 3×3 contextual. */
-export function CommandBar({ hud, log, selectedId, onCrewCommand, onOrder, onGeneral, onZoom, minimapRef }: Props) {
+export function CommandBar({ hud, log, selectedId, onCrewCommand, onOrder, onHire, onGeneral, onZoom, minimapRef }: Props) {
   const selected = hud.people.find((p) => p.id === selectedId) ?? null;
   const last = log[0];
 
@@ -32,6 +33,18 @@ export function CommandBar({ hud, log, selectedId, onCrewCommand, onOrder, onGen
     if (!o || !selected) return null;
     return { icon: o.ready ? o.icon : `${o.cooldownLeft}s`, label: o.label, onClick: () => onOrder(selected.id, o.id), disabled: !o.ready, hot: o.ready };
   };
+  const staffRow = selected ? (hud.staff ?? []).find((x) => x.id === selected.id) : undefined;
+  const vacant = !!selected && selected.employed === false;
+  const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("es-AR")}`;
+  const vacantSlots: Slot[] = selected && staffRow
+    ? [
+        { icon: "🤝", label: `Junior ${money(staffRow.hireJunior ?? 0)}`, onClick: () => onHire(selected.id, 1), hot: true },
+        { icon: "⭐", label: `Senior ${money(staffRow.hireSenior ?? 0)}`, onClick: () => onHire(selected.id, 2) },
+        { icon: "👥", label: "Plantilla", onClick: () => onGeneral("staff") },
+        null, null, null, null, null,
+        { icon: "✕", label: "Cerrar", onClick: () => onCrewCommand("deselect") },
+      ]
+    : [];
   const crewSlots: Slot[] = selected
     ? [
         { icon: "🪑", label: "A su puesto", onClick: () => onCrewCommand("station") },
@@ -56,7 +69,7 @@ export function CommandBar({ hud, log, selectedId, onCrewCommand, onOrder, onGen
     { icon: "🗺", label: "Vista", onClick: () => onGeneral("center") },
     { icon: "⚙", label: "Opciones", onClick: () => onGeneral("options") },
   ];
-  const slots = selected ? crewSlots : generalSlots;
+  const slots = selected ? (vacant ? vacantSlots : crewSlots) : generalSlots;
 
   return (
     <div className="sc-command-bar pointer-events-auto absolute inset-x-0 bottom-0 z-20">
@@ -68,14 +81,15 @@ export function CommandBar({ hud, log, selectedId, onCrewCommand, onOrder, onGen
             </button>
           ) : selected ? (
             <p className="min-w-0 truncate text-white">
-              <strong>{selected.name}</strong> · {selected.role} <span className="text-[#a8b88a]">— {STATE_LABEL[selected.state] ?? selected.state}</span>
+              <strong>{selected.name}</strong> · {selected.role} <span className="text-[#a8b88a]">— {vacant ? "Puesto vacante" : `${staffRow?.levelName ?? ""} · ${STATE_LABEL[selected.state] ?? selected.state}`}</span>
             </p>
           ) : (
             <p className="min-w-0 truncate text-[#c8d4a8]">
               {last ? <><strong className="text-white">{last.who}:</strong> {last.text}</> : hud.objective}
             </p>
           )}
-          <span className="ml-auto shrink-0 text-[#e2b340]">★{hud.totalStars ?? 0} · {hud.timeLeft}s</span>
+          <button type="button" onClick={() => onGeneral("production")} aria-label="Ver presupuesto y producción" className={`ml-auto shrink-0 font-bold ${(hud.budget ?? 0) < 0 ? "text-[#f0a090]" : "text-[#e2b340]"}`}>💰 {money(hud.budget ?? 0)}</button>
+          <span className="shrink-0 text-[#e2b340]">★{hud.totalStars ?? 0} · {hud.timeLeft}s</span>
         </div>
         <div className="grid grid-cols-[auto_1fr_auto] items-stretch gap-1.5">
           <div className="flex flex-col gap-1">
