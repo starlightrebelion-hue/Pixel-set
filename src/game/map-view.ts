@@ -18,13 +18,14 @@ type TouchCamOpts = {
   onTap: (sx: number, sy: number, rect: DOMRect) => void;
   onCrewPointerDown?: (sx: number, sy: number, rect: DOMRect) => CrewId | null;
   onCrewDrag?: (id: CrewId, sx: number, sy: number, rect: DOMRect) => void;
-  onCrewDrop?: (id: CrewId, sx: number, sy: number, rect: DOMRect) => void;
+  onCrewDrop?: (id: CrewId, sx: number, sy: number, rect: DOMRect, moved: boolean) => void;
 };
 
 /** Controles de cámara multi-touch / mouse: pan, pinch zoom, tap. */
 export function attachTouchCamera({ canvas, camRef, onCamChange, onTap, onCrewPointerDown, onCrewDrag, onCrewDrop }: TouchCamOpts) {
   let mode: "none" | "pan" | "pinch" | "tap" | "crew" = "none";
   let draggingCrew: CrewId | null = null;
+  let crewMoved = false;
   let panLastX = 0, panLastY = 0;
   let pinchStartDist = 0;
   let pinchStartZoom = 1;
@@ -51,6 +52,7 @@ export function attachTouchCamera({ canvas, camRef, onCamChange, onTap, onCrewPo
     const crewId = onCrewPointerDown?.(e.clientX - rect.left, e.clientY - rect.top, rect) ?? null;
     if (crewId) {
       draggingCrew = crewId;
+      crewMoved = false;
       mode = "crew";
       tapStartX = e.clientX; tapStartY = e.clientY;
       canvas.setPointerCapture(e.pointerId);
@@ -71,7 +73,8 @@ export function attachTouchCamera({ canvas, camRef, onCamChange, onTap, onCrewPo
 
     if (mode === "crew" && draggingCrew) {
       const r = canvas.getBoundingClientRect();
-      onCrewDrag?.(draggingCrew, e.clientX - r.left, e.clientY - r.top, r);
+      if (Math.hypot(e.clientX - tapStartX, e.clientY - tapStartY) > 5) crewMoved = true;
+      if (crewMoved) onCrewDrag?.(draggingCrew, e.clientX - r.left, e.clientY - r.top, r);
       return;
     }
     if (mode === "pinch" && activePointers.size >= 2) {
@@ -113,8 +116,9 @@ export function attachTouchCamera({ canvas, camRef, onCamChange, onTap, onCrewPo
     }
     const r = canvas.getBoundingClientRect();
     if (mode === "crew" && draggingCrew) {
-      onCrewDrop?.(draggingCrew, e.clientX - r.left, e.clientY - r.top, r);
+      onCrewDrop?.(draggingCrew, e.clientX - r.left, e.clientY - r.top, r, crewMoved);
       draggingCrew = null;
+      crewMoved = false;
     } else if (mode === "tap" && !tapMoved) {
       onTap(e.clientX - r.left, e.clientY - r.top, r);
     }
