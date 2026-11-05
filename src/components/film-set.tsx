@@ -3,7 +3,7 @@ import { Clapperboard, Film, Library, Megaphone, Pause, TriangleAlert, Users } f
 import { previewPathPrefix } from "@/lib/preview-path-prefix";
 import { CREW, stateLabel, type CrewId, type MapId } from "@/game/crew";
 import { COFFEE_SPOT, createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
-import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
+import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";\nimport { drawGenreSet } from "@/game/genre-sets";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import { StoryDirector } from "@/components/story-director";
 
@@ -29,7 +29,7 @@ const INITIAL_HUD: Hud = {
   phase: "guion", map: "guion", mapLabel: "Sala de guion", transitioning: false,
   people: CREW.map((c) => ({ id: c.id, name: c.name, role: c.role, state: "work" as const, moving: false })),
   dayGoodTakes: 0, dayTarget: 3, lastStars: 0, totalStars: 0,
-  genre: "Drama", unlockedGenres: ["Drama"],
+  genre: "drama", genreLabel: "Drama",
   crisis: null, takeResult: null, onMarkReady: false, bonds: [],
 };
 
@@ -178,7 +178,7 @@ export function FilmSet() {
       } else {
         layout.ox = 0; layout.oy = 0; layout.dw = cw; layout.dh = ch;
       }
-      const toX = (nx: number) => layout.ox + nx * layout.dw;
+      if (mapId === "set" && stage?.naturalWidth) drawGenreSet(ctx, layout.ox, layout.oy, layout.dw, layout.dh, sim.hud().genre);\n      const toX = (nx: number) => layout.ox + nx * layout.dw;
       const toY = (ny: number) => layout.oy + ny * layout.dh;
       const size = layout.dh * 0.23;
       const visible = sim.people.filter((p) => p.visible !== false);
@@ -303,7 +303,7 @@ export function FilmSet() {
       <section className="grid gap-3 rounded-md border border-primary/40 bg-surface p-3 sm:grid-cols-[1fr_auto_auto]">
         <div>
           <p className="text-xs font-bold tracking-[0.16em] text-primary">
-            MISIÓN · TOMA {hud.take} · {hud.mapLabel.toUpperCase()} · {hud.genre.toUpperCase()}
+            MISIÓN · TOMA {hud.take} · {hud.mapLabel.toUpperCase()} · {hud.genreLabel.toUpperCase()}
           </p>
           <p className="mt-1 text-sm font-semibold text-fg">{hud.objective}</p>
           <p className="mt-1 text-xs text-muted">
