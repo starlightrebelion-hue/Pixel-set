@@ -6,7 +6,7 @@ export type Camera = {
   zoom: number;
 };
 
-export const CAMERA_DEFAULT: Camera = { panX: 0, panY: 0, zoom: 1 };
+export const CAMERA_DEFAULT: Camera = { panX: 0, panY: 0, zoom: 1.12 };
 
 export const CAMERA_LIMITS = {
   minZoom: 0.55,
