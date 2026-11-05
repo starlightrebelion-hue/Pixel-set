@@ -39,6 +39,12 @@ export type DevelopmentState = {
   log: string[];
   approved: boolean;
   meetingOpen: boolean;
+  selectedThemeId?: string;
+  selectedThemeTitle?: string;
+  selectedGenre?: string;
+  marketSignals?: string[];
+  ceoNotes?: string;
+  marketingSpeech?: string;
 };
 
 const STORAGE_KEY = "pixel-set-dev-v1";
@@ -104,6 +110,8 @@ export function createDevelopment(title = "La traición"): DevelopmentState {
     log: ["Rey y Sol entran a la sala de reunión. El guion todavía no cierra."],
     approved: false,
     meetingOpen: true,
+    marketSignals: ["drama", "bajo-presupuesto", "pareja"],
+    ceoNotes: "Priorizar historias vendibles con pocas locaciones esta temporada.",
   };
 }
 
@@ -233,4 +241,36 @@ export function resetDevelopment(title?: string) {
   const next = createDevelopment(title);
   saveDevelopment(next);
   return next;
+}
+
+export function selectTheme(
+  state: DevelopmentState,
+  theme: { id: string; title: string; genre: string; speech?: string },
+): DevelopmentState {
+  if (state.approved) return state;
+  const approvalBoost = state.selectedThemeId === theme.id ? 0 : 6;
+  return {
+    ...state,
+    selectedThemeId: theme.id,
+    selectedThemeTitle: theme.title,
+    selectedGenre: theme.genre,
+    marketingSpeech: theme.speech ?? state.marketingSpeech,
+    approval: Math.min(100, state.approval + approvalBoost),
+    day: state.day + (state.selectedThemeId ? 0 : 1),
+    log: [
+      `Nora (Estudio): se fija la línea «${theme.title}» (${theme.genre}). Sol y Rey desarrollan sobre eso.`,
+      ...state.log,
+    ].slice(0, 30),
+  };
+}
+
+export function setMarketContext(
+  state: DevelopmentState,
+  patch: { marketSignals?: string[]; ceoNotes?: string },
+): DevelopmentState {
+  return {
+    ...state,
+    marketSignals: patch.marketSignals ?? state.marketSignals,
+    ceoNotes: patch.ceoNotes ?? state.ceoNotes,
+  };
 }
