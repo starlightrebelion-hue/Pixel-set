@@ -4,7 +4,7 @@ import { previewPathPrefix } from "@/lib/preview-path-prefix";
 import { CREW, SCENES, stateLabel, type CrewId, type MapId } from "@/game/crew";
 import { COFFEE_SPOT, createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
 import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
-import { getDioramaBackgrounds, drawDioramaAtmosphere } from "@/game/diorama-sets";
+import { getDioramaBackgrounds, getDioramaForegrounds, drawDioramaAtmosphere } from "@/game/diorama-sets";
 import { GENRE_SETS, type GenreId } from "@/game/genre-sets";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import { StoryDirector } from "@/components/story-director";
@@ -122,7 +122,7 @@ export function FilmSet() {
     const dioramaPaths = new Set<string>();
     for (const genre of Object.keys(GENRE_SETS) as GenreId[]) {
       for (const scene of SCENES) {
-        for (const path of getDioramaBackgrounds(scene, genre)) dioramaPaths.add(path);
+        for (const path of [...getDioramaBackgrounds(scene, genre), ...getDioramaForegrounds(scene, genre)]) dioramaPaths.add(path);
       }
     }
     for (const path of dioramaPaths) {
@@ -168,7 +168,8 @@ export function FilmSet() {
       const activeHud = sim.hud();
       const legacyPath = MAP_FILES[mapId];
       const sceneBackgrounds = mapId === "set" ? getDioramaBackgrounds(activeHud.scene, activeHud.genre) : [];
-      const selectedPath = sceneBackgrounds.find((path) => maps.get(path)?.naturalWidth) ?? legacyPath;
+      const selectedPath = sceneBackgrounds.find((path) => path !== "/set/stage.jpg" && maps.get(path)?.naturalWidth) ?? legacyPath;
+      const foregroundPath = mapId === "set" ? getDioramaForegrounds(activeHud.scene, activeHud.genre).find((path) => maps.get(path)?.naturalWidth) : undefined;
       const stage = maps.get(selectedPath);
       if (stage?.naturalWidth) {
         const scale = Math.max(cw / stage.naturalWidth, ch / stage.naturalHeight);
@@ -204,6 +205,8 @@ export function FilmSet() {
         ctx.fillText(label, x, y + 6);
       }
       for (const person of ordered) drawWorkstationFront(ctx, toX(person.homeX), toY(person.homeY), size);
+      const foreground = foregroundPath ? maps.get(foregroundPath) : undefined;
+      if (foreground?.naturalWidth) ctx.drawImage(foreground, layout.ox, layout.oy, layout.dw, layout.dh);
       for (const particle of sim.particles) {
         const x = toX(particle.x), y = toY(particle.y);
         ctx.globalAlpha = Math.max(0, particle.life / particle.max);
