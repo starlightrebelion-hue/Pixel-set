@@ -2,13 +2,15 @@ import type { Hud, LogLine } from "@/game/sim";
 import type { CrewId } from "@/game/crew";
 
 export type CrewCommandId = "station" | "coffee" | "praise" | "scold" | "wake" | "center" | "deselect";
-export type GeneralActionId = "action" | "cut" | "pause" | "team" | "scene" | "story" | "studio" | "center" | "options";
+export type GeneralActionId = "action" | "cut" | "pause" | "team" | "scene" | "story" | "studio" | "center" | "options" | "missions" | "departments" | "production" | "staff";
 
 type Props = {
   hud: Hud;
   log: LogLine[];
   selectedId: CrewId | null;
   onCrewCommand: (cmd: CrewCommandId) => void;
+  onOrder: (crewId: CrewId, orderId: string) => void;
+  onHire: (crewId: CrewId, level: 1 | 2) => void;
   onGeneral: (action: GeneralActionId) => void;
   onZoom: (dir: "in" | "out" | "reset") => void;
   minimapRef: { current: HTMLCanvasElement | null };
@@ -21,10 +23,28 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 /** Barra inferior estilo StarCraft: minimapa + info + tarjeta de comandos 3×3 contextual. */
-export function CommandBar({ hud, log, selectedId, onCrewCommand, onGeneral, onZoom, minimapRef }: Props) {
+export function CommandBar({ hud, log, selectedId, onCrewCommand, onOrder, onHire, onGeneral, onZoom, minimapRef }: Props) {
   const selected = hud.people.find((p) => p.id === selectedId) ?? null;
   const last = log[0];
 
+  const dept = selected ? (hud.departments ?? []).find((d) => d.id === selected.id) : undefined;
+  const orderSlot = (i: 0 | 1): Slot => {
+    const o = dept?.orders[i];
+    if (!o || !selected) return null;
+    return { icon: o.ready ? o.icon : `${o.cooldownLeft}s`, label: o.label, onClick: () => onOrder(selected.id, o.id), disabled: !o.ready, hot: o.ready };
+  };
+  const staffRow = selected ? (hud.staff ?? []).find((x) => x.id === selected.id) : undefined;
+  const vacant = !!selected && selected.employed === false;
+  const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("es-AR")}`;
+  const vacantSlots: Slot[] = selected && staffRow
+    ? [
+        { icon: "🤝", label: `Junior ${money(staffRow.hireJunior ?? 0)}`, onClick: () => onHire(selected.id, 1), hot: true },
+        { icon: "⭐", label: `Senior ${money(staffRow.hireSenior ?? 0)}`, onClick: () => onHire(selected.id, 2) },
+        { icon: "👥", label: "Plantilla", onClick: () => onGeneral("staff") },
+        null, null, null, null, null,
+        { icon: "✕", label: "Cerrar", onClick: () => onCrewCommand("deselect") },
+      ]
+    : [];
   const crewSlots: Slot[] = selected
     ? [
         { icon: "🪑", label: "A su puesto", onClick: () => onCrewCommand("station") },
@@ -33,8 +53,8 @@ export function CommandBar({ hud, log, selectedId, onCrewCommand, onGeneral, onZ
         { icon: "📢", label: "Reñir", onClick: () => onCrewCommand("scold"), disabled: selected.id === "director" },
         { icon: "⏰", label: "Despertar", onClick: () => onCrewCommand("wake"), disabled: selected.state !== "sleep" },
         { icon: "🎯", label: "Ver", onClick: () => onCrewCommand("center") },
-        null,
-        null,
+        orderSlot(0),
+        orderSlot(1),
         { icon: "✕", label: "Cerrar", onClick: () => onCrewCommand("deselect") },
       ]
     : [];
@@ -49,22 +69,27 @@ export function CommandBar({ hud, log, selectedId, onCrewCommand, onGeneral, onZ
     { icon: "🗺", label: "Vista", onClick: () => onGeneral("center") },
     { icon: "⚙", label: "Opciones", onClick: () => onGeneral("options") },
   ];
-  const slots = selected ? crewSlots : generalSlots;
+  const slots = selected ? (vacant ? vacantSlots : crewSlots) : generalSlots;
 
   return (
     <div className="sc-command-bar pointer-events-auto absolute inset-x-0 bottom-0 z-20">
       <div className="mx-auto max-w-3xl border-t-2 border-[#3d5a1e] bg-gradient-to-b from-[#1a2410] to-[#0d1208] p-1.5 shadow-[0_-8px_24px_rgba(0,0,0,0.55)] sm:p-2">
         <div className="mb-1 flex items-center gap-2 rounded border border-[#3d5a1e]/70 bg-[#0f140a] px-2 py-1 text-[11px]">
-          {selected ? (
+          {!selected && (hud.alerts?.length ?? 0) > 0 ? (
+            <button type="button" onClick={() => onGeneral("departments")} className="min-w-0 truncate text-left text-[#f0a090]" aria-label="Ver departamentos con problemas">
+              ⚠ <strong>{hud.alerts![0]}</strong>{hud.alerts!.length > 1 ? ` y ${hud.alerts!.length - 1} más` : ""} — tocá para ver
+            </button>
+          ) : selected ? (
             <p className="min-w-0 truncate text-white">
-              <strong>{selected.name}</strong> · {selected.role} <span className="text-[#a8b88a]">— {STATE_LABEL[selected.state] ?? selected.state}</span>
+              <strong>{selected.name}</strong> · {selected.role} <span className="text-[#a8b88a]">— {vacant ? "Puesto vacante" : `${staffRow?.levelName ?? ""} · ${STATE_LABEL[selected.state] ?? selected.state}`}</span>
             </p>
           ) : (
             <p className="min-w-0 truncate text-[#c8d4a8]">
               {last ? <><strong className="text-white">{last.who}:</strong> {last.text}</> : hud.objective}
             </p>
           )}
-          <span className="ml-auto shrink-0 text-[#e2b340]">★{hud.totalStars ?? 0} · {hud.timeLeft}s</span>
+          <button type="button" onClick={() => onGeneral("production")} aria-label="Ver presupuesto y producción" className={`ml-auto shrink-0 font-bold ${(hud.budget ?? 0) < 0 ? "text-[#f0a090]" : "text-[#e2b340]"}`}>💰 {money(hud.budget ?? 0)}</button>
+          <span className="shrink-0 text-[#e2b340]">★{hud.totalStars ?? 0} · {hud.timeLeft}s</span>
         </div>
         <div className="grid grid-cols-[auto_1fr_auto] items-stretch gap-1.5">
           <div className="flex flex-col gap-1">
@@ -77,19 +102,31 @@ export function CommandBar({ hud, log, selectedId, onCrewCommand, onGeneral, onZ
               <button type="button" onClick={() => onZoom("in")} className="sc-btn flex-1" aria-label="Acercar">+</button>
             </div>
           </div>
-          <div className="min-w-0 rounded border border-[#3d5a1e]/70 bg-[#0a0e06] p-1.5">
-            <p className="text-[8px] font-bold tracking-widest text-[#9fbf5a]">{selected ? "ÓRDENES" : "MISIÓN"}</p>
-            <p className="line-clamp-4 text-[11px] font-semibold leading-snug text-white">
-              {selected ? "Elegí una orden o tocá otro personaje." : hud.objective}
-            </p>
-          </div>
+          {selected ? (
+            <div className="min-w-0 rounded border border-[#3d5a1e]/70 bg-[#0a0e06] p-1.5">
+              <p className="text-[8px] font-bold tracking-widest text-[#9fbf5a]">ÓRDENES</p>
+              <p className="line-clamp-4 text-[11px] font-semibold leading-snug text-white">{dept ? `${dept.name}: ${dept.effect}` : "Elegí una orden o tocá otro personaje."}</p>
+            </div>
+          ) : (
+            <button type="button" onClick={() => onGeneral("missions")} aria-label="Ver misiones del capítulo"
+              className="min-w-0 rounded border border-[#3d5a1e]/70 bg-[#0a0e06] p-1.5 text-left active:bg-[#16200c]">
+              <p className="text-[8px] font-bold tracking-widest text-[#9fbf5a]">MISIONES {hud.chapterIndex ? `· CAP. ${hud.chapterIndex}/${hud.chapterCount}` : ""}</p>
+              {(hud.missions ?? []).filter((m) => m.required).slice(0, 3).map((m) => (
+                <div key={m.id} className="mt-0.5">
+                  <p className="flex justify-between gap-1 text-[10px] leading-tight text-white"><span className="truncate">{m.done ? "✓ " : ""}{m.label}</span><span className="shrink-0 text-[#e2b340]">{m.progress}/{m.target}</span></p>
+                  <div className="h-1 overflow-hidden rounded bg-[#1c2a10]"><i className="block h-full bg-[#9fbf5a]" style={{ width: `${(m.progress / m.target) * 100}%` }} /></div>
+                </div>
+              ))}
+              {(hud.missions ?? []).length === 0 && <p className="text-[11px] font-semibold text-white">{hud.objective}</p>}
+            </button>
+          )}
           <div className="grid grid-cols-3 gap-0.5" aria-label={selected ? `Órdenes de ${selected.name}` : "Comandos"}>
             {slots.map((s, i) =>
               s ? (
                 <button key={i} type="button" disabled={s.disabled} onClick={s.onClick}
-                  className={`sc-cmd !min-h-[44px] !min-w-[52px] ${s.hot ? "sc-cmd-on" : ""} ${s.disabled ? "opacity-40" : ""}`}>
+                  className={`sc-cmd !min-h-[44px] !min-w-[52px] !max-w-[64px] ${s.hot ? "sc-cmd-on" : ""} ${s.disabled ? "opacity-40" : ""}`}>
                   <span className="text-base leading-none">{s.icon}</span>
-                  <span className="text-[8px] leading-none sm:text-[9px]">{s.label}</span>
+                  <span className="max-w-[58px] truncate text-[8px] leading-none sm:text-[9px]">{s.label}</span>
                 </button>
               ) : <span key={i} className="rounded border border-[#2a3a18]/60 bg-[#0a0e06]/60" />,
             )}

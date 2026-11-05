@@ -9,6 +9,8 @@ import { createCustomStory, isStoryDefinition, STORY_LIBRARY, type ChallengeStyl
 import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import { GameMenus } from "@/components/game-menus";
+import { ProgressSummary } from "@/components/progress-view";
+import { CUSTOM_STORY_LEVEL, STORY_LEVEL, emptyProgress, loadProgress, viewProgress, type ProgressView } from "@/game/progress";
 import { CrewRoster } from "@/components/crew-roster";
 import { useRoute } from "@/game/use-route";
 import { createSetDirector, type SetDirector, type SetSnapshot } from "@/game/set-director";
@@ -67,7 +69,7 @@ function poseFor(p: Person, moving: boolean, t: number) {
   return step === 0 ? "pose-1" : "pose-2";
 }
 
-type Screen = "menu" | "stories" | "create" | "playing";
+type Screen = "menu" | "stories" | "create" | "studio" | "playing";
 const CUSTOM_STORIES_KEY = "pixel-set-custom-stories-v1";
 
 export function FilmSet() {
@@ -92,8 +94,19 @@ export function FilmSet() {
   const [selectedId, setSelectedId] = useState<CrewId | null>(null);
   const selectedRef = useRef<CrewId | null>(null);
   const [camTick, setCamTick] = useState(0);
+  const [toastText, setToastText] = useState<string | null>(null);
+  const lastToastId = useRef<number | null>(null);
+  const missionToast = hud.missionToast ?? null;
+  useEffect(() => {
+    if (!missionToast || missionToast.id === lastToastId.current) return;
+    lastToastId.current = missionToast.id;
+    setToastText(missionToast.text);
+    const t = window.setTimeout(() => setToastText(null), 4200);
+    return () => window.clearTimeout(t);
+  }, [missionToast]);
   selectedRef.current = selectedId;
   const gameActiveRef = useRef(false);
+  const [menuProgress, setMenuProgress] = useState<ProgressView>(() => viewProgress(emptyProgress()));
   // El juego corre sólo en pantalla de juego y sin menús abiertos.
   gameActiveRef.current = playing && gamePath.length === 0;
   const [customStories, setCustomStories] = useState<StoryDefinition[]>([]);
@@ -319,6 +332,7 @@ export function FilmSet() {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now; anim += dt;
       director.step(dt);
+      sim.setConditions({ darkness: Math.min(1, director.snapshot().lighting.alpha / 0.6) });
       if (gameActiveRef.current) sim.step(dt);
       draw();
       const h = sim.hud();
@@ -376,6 +390,10 @@ export function FilmSet() {
   }, []);
 
 
+  // Progresión guardada: se relee cada vez que se entra a un menú.
+  useEffect(() => { if (!playing) setMenuProgress(viewProgress(loadProgress())); }, [playing, route.length]);
+  const studioLevel = menuProgress.level;
+  const storyNeed = (story: StoryDefinition) => (STORY_LEVEL[story.id] ?? CUSTOM_STORY_LEVEL);
   const availableStories = [...STORY_LIBRARY, ...customStories];
   const selectedStory = availableStories.find((story) => story.id === selectedStoryId) ?? STORY_LIBRARY[0]!;
   const startStory = (story: StoryDefinition = selectedStory) => {
@@ -443,8 +461,26 @@ export function FilmSet() {
     if (cmd === "center") { centerOn(selectedId); return; }
     run((sim) => sim.commandCrew(selectedId, cmd));
   };
+  const onOrder = (crewId: CrewId, orderId: string) => {
+    const sim = simRef.current;
+    if (!sim) return;
+    const r = sim.orderCrew(crewId, orderId);
+    if (!r.ok) { setToastText(r.message); window.setTimeout(() => setToastText(null), 2600); }
+    setHud(sim.hud());
+  };
+  const onStaff = (action: "hire1" | "hire2" | "upgrade" | "fire", crewId: CrewId) => {
+    const sim = simRef.current;
+    if (!sim) return;
+    const r = action === "hire1" ? sim.hire(crewId, 1) : action === "hire2" ? sim.hire(crewId, 2) : action === "upgrade" ? sim.upgrade(crewId) : sim.fire(crewId);
+    if (!r.ok) { setToastText(r.message); window.setTimeout(() => setToastText(null), 3200); }
+    setHud(sim.hud());
+  };
   const onGeneral = (action: GeneralActionId) => {
     if (action === "center") { zoom("reset"); return; }
+    if (action === "production") { routePush(["play", "production"]); return; }
+    if (action === "staff") { routePush(["play", "staff"]); return; }
+    if (action === "departments") { routePush(["play", "departments"]); return; }
+    if (action === "missions") { routePush(["play", "missions"]); return; }
     if (action === "scene") { routePush(["play", "scene"]); return; }
     if (action === "story") { routePush(["play", "story"]); return; }
     if (action === "studio") { routePush(["play", "studio"]); return; }
@@ -535,10 +571,21 @@ export function FilmSet() {
                 <div className="grid gap-3">
                   <button type="button" onClick={() => setScreen("stories")} className="min-h-14 rounded border border-primary bg-primary px-4 text-left font-bold text-bg hover:brightness-110">NUEVA PARTIDA <span className="block text-xs font-normal opacity-80">Elegí una historia y empezá a rodar</span></button>
                   <button type="button" onClick={() => setScreen("stories")} className="min-h-12 rounded border border-border px-4 text-left text-sm font-semibold text-fg hover:border-primary">MIS HISTORIAS <span className="block text-xs font-normal text-muted">Campañas disponibles: {availableStories.length}</span></button>
-                  <button type="button" onClick={() => { setStoryError(""); setScreen("create"); }} className="min-h-12 rounded border border-border px-4 text-left text-sm font-semibold text-fg hover:border-primary">CREAR HISTORIA <span className="block text-xs font-normal text-muted">Inventá el argumento de tu próxima película</span></button>
+                  <button type="button" onClick={() => setScreen("studio")} className="min-h-12 rounded border border-border px-4 text-left text-sm font-semibold text-fg hover:border-primary">MI ESTUDIO <span className="block text-xs font-normal text-muted">Nivel {menuProgress.level} · {menuProgress.levelName} · Reputación {menuProgress.tier}</span></button>
+                  <button type="button" disabled={studioLevel < CUSTOM_STORY_LEVEL} onClick={() => { setStoryError(""); setScreen("create"); }} className="min-h-12 rounded border border-border px-4 text-left text-sm font-semibold text-fg hover:border-primary disabled:opacity-40">{studioLevel < CUSTOM_STORY_LEVEL ? "🔒 " : ""}CREAR HISTORIA <span className="block text-xs font-normal text-muted">{studioLevel < CUSTOM_STORY_LEVEL ? `Se desbloquea en el nivel ${CUSTOM_STORY_LEVEL}. ` : ""}Inventá el argumento de tu próxima película</span></button>
                   <div className="mt-2 rounded border border-border p-3 text-xs leading-5 text-muted"><span className="font-bold text-fg">CÓMO SE JUEGA</span><br />Arrastrá a los personajes hasta su escritorio cuando se distraigan. Completá los objetivos del capítulo, administrá el estrés y usá las órdenes del director con criterio.</div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {screen === "studio" && (
+            <div>
+              <div className="mb-5 flex items-end justify-between gap-3">
+                <div><p className="text-xs font-bold tracking-[0.2em] text-primary">PROGRESIÓN</p><h2 className="font-display text-3xl text-fg">Mi estudio</h2></div>
+                <button type="button" onClick={() => setScreen("menu")} className="rounded border border-border px-3 py-2 text-xs text-muted hover:text-fg">VOLVER</button>
+              </div>
+              <ProgressSummary view={menuProgress} />
             </div>
           )}
 
@@ -550,17 +597,17 @@ export function FilmSet() {
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 {availableStories.map((story) => (
-                  <button key={story.id} type="button" onClick={() => setSelectedStoryId(story.id)} className={`rounded-lg border p-4 text-left transition-colors ${selectedStoryId === story.id ? "border-primary bg-primary/10" : "border-border bg-bg hover:border-primary/60"}`}>
+                  <button key={story.id} type="button" onClick={() => { if (storyNeed(story) <= studioLevel) setSelectedStoryId(story.id); }} className={`rounded-lg border p-4 text-left transition-colors ${storyNeed(story) > studioLevel ? "opacity-50" : ""} ${selectedStoryId === story.id ? "border-primary bg-primary/10" : "border-border bg-bg hover:border-primary/60"}`}>
                     <div className="mb-2 flex items-center justify-between gap-2"><span className="text-[10px] font-bold tracking-[0.18em] text-primary">{story.genre.toUpperCase()}</span>{story.custom && <span className="rounded bg-primary/15 px-2 py-1 text-[9px] font-bold text-primary">TU HISTORIA</span>}</div>
                     <h3 className="font-display text-2xl text-fg">{story.title}</h3>
                     <p className="mt-2 text-sm leading-5 text-muted">{story.premise}</p>
-                    <p className="mt-3 text-[10px] font-bold tracking-widest text-muted">3 CAPÍTULOS · {story.chapters[0]?.timeLimit ?? 90}s EN EL PRIMERO</p>
+                    <p className="mt-3 text-[10px] font-bold tracking-widest text-muted">3 CAPÍTULOS · {story.chapters[0]?.timeLimit ?? 90}s EN EL PRIMERO{storyNeed(story) > studioLevel ? ` · 🔒 NIVEL ${storyNeed(story)}` : ""}</p>
                   </button>
                 ))}
               </div>
               <div className="mt-6 flex flex-wrap gap-3">
-                <button type="button" onClick={() => startStory()} className="min-h-12 rounded border border-primary bg-primary px-6 text-sm font-bold text-bg">COMENZAR: {selectedStory.title.toUpperCase()}</button>
-                <button type="button" onClick={() => { setStoryError(""); setScreen("create"); }} className="min-h-12 rounded border border-border px-5 text-sm font-semibold text-fg hover:border-primary">+ CREAR OTRA HISTORIA</button>
+                <button type="button" onClick={() => { if (storyNeed(selectedStory) <= studioLevel) startStory(); }} disabled={storyNeed(selectedStory) > studioLevel} className="min-h-12 rounded border border-primary bg-primary px-6 text-sm font-bold text-bg disabled:opacity-40">COMENZAR: {selectedStory.title.toUpperCase()}</button>
+                <button type="button" disabled={studioLevel < CUSTOM_STORY_LEVEL} onClick={() => { setStoryError(""); setScreen("create"); }} className="min-h-12 rounded border border-border px-5 text-sm font-semibold text-fg hover:border-primary disabled:opacity-40">{studioLevel < CUSTOM_STORY_LEVEL ? `🔒 CREAR HISTORIA (NIVEL ${CUSTOM_STORY_LEVEL})` : "+ CREAR OTRA HISTORIA"}</button>
               </div>
             </div>
           )}
@@ -613,8 +660,13 @@ export function FilmSet() {
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 p-4">
             <div className="w-full max-w-md rounded-lg border border-primary/50 bg-surface p-5 text-center shadow-2xl">
               <p className="text-[10px] font-bold tracking-[0.24em] text-primary">{hud.campaignComplete ? "PELÍCULA TERMINADA" : hud.gameOver ? "FIN DE LA JORNADA" : "CAPÍTULO FALLIDO"}</p>
-              <h2 className="mt-2 font-display text-3xl text-fg">{hud.campaignComplete ? "¡Lo lograron!" : hud.gameOver ? "Se acabaron los intentos" : "La toma no llegó"}</h2>
-              <p className="mt-3 text-sm leading-5 text-muted">{hud.campaignComplete ? `Terminaste "${hud.storyTitle}". El equipo consiguió cerrar la historia.` : hud.gameOver ? "El equipo agotó sus tres intentos. Podés probar otra campaña o diseñar una nueva." : `No se cumplió el objetivo de "${hud.chapterTitle}". Todavía quedan ${hud.lives} intentos.`}</p>
+              <h2 className="mt-2 font-display text-3xl text-fg">{hud.campaignComplete ? "¡Lo lograron!" : hud.gameOver ? (hud.gameOverReason === "bankrupt" ? "El estudio quebró" : "Se acabaron los intentos") : "La toma no llegó"}</h2>
+              <p className="mt-3 text-sm leading-5 text-muted">{hud.campaignComplete ? `Terminaste "${hud.storyTitle}". El equipo consiguió cerrar la historia.` : hud.gameOver ? (hud.gameOverReason === "bankrupt" ? "El presupuesto cayó demasiado: no se puede seguir pagando al equipo. Probá otra campaña y cuidá los sueldos." : "El equipo agotó sus intentos. Podés probar otra campaña o diseñar una nueva.") : `No se cumplió el objetivo de "${hud.chapterTitle}". Todavía quedan ${hud.lives} intentos.`}</p>
+              {hud.filmSummary && (
+                <p className="mt-3 text-xs text-[#e2b340]">
+                  +{hud.filmSummary.xpGained} XP · Reputación {hud.filmSummary.repDelta >= 0 ? "+" : ""}{hud.filmSummary.repDelta} · Nivel {hud.filmSummary.level}
+                </p>
+              )}
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 
                 <button type="button" onClick={() => setScreen("stories")} className="min-h-11 rounded border border-border px-4 text-xs font-bold text-fg">ELEGIR OTRA HISTORIA</button>
@@ -645,10 +697,14 @@ export function FilmSet() {
           </div>
           {hud.storyTitle && <p className="text-[11px] text-[#9fbf5a]">{hud.storyTitle} · Cap. {hud.chapterIndex}/{hud.chapterCount}: {hud.chapterTitle} · ♥ {hud.lives}</p>}
         </div>
-        <div className="pointer-events-auto flex items-center gap-2"><button type="button" onClick={openMenu} className="rounded border border-[#4a6b28] bg-[#0a0e06]/90 px-2 py-1 text-[10px] font-bold text-[#9fbf5a]">MENÚ</button><div className="rounded border border-[#4a6b28] bg-[#0a0e06]/90 px-2 py-1 text-[10px] text-[#9fbf5a]">
+        <div className="pointer-events-auto flex items-center gap-2"><button type="button" onClick={() => routePush(["play", "progress"])} aria-label="Ver progresión del estudio" className="rounded border border-[#4a6b28] bg-[#0a0e06]/90 px-2 py-1 text-[10px] font-bold text-[#e2b340]">⭐ Nv {hud.progress?.level ?? 1}</button><button type="button" onClick={openMenu} className="rounded border border-[#4a6b28] bg-[#0a0e06]/90 px-2 py-1 text-[10px] font-bold text-[#9fbf5a]">MENÚ</button><div className="rounded border border-[#4a6b28] bg-[#0a0e06]/90 px-2 py-1 text-[10px] text-[#9fbf5a]">
           ZOOM {(camRef.current.zoom * 100) | 0}%
         </div></div>
       </header>
+
+      {toastText && (
+        <div role="status" className="pointer-events-none absolute left-1/2 top-28 z-30 max-w-[90vw] -translate-x-1/2 rounded-lg border-2 border-[#e2b340] bg-[#2a2410]/95 px-4 py-2 text-center text-sm font-bold text-[#e2b340] shadow-lg">{toastText}</div>
+      )}
 
       <CrewRoster people={hud.people} selectedId={selectedId} portraits={PORTRAITS} onSelect={selectCrew} onOptions={() => routePush(["play", "opts"])} />
 
@@ -657,6 +713,8 @@ export function FilmSet() {
         log={log}
         selectedId={selectedId}
         onCrewCommand={onCrewCommand}
+        onOrder={onOrder}
+        onHire={(id, level) => onStaff(level === 1 ? "hire1" : "hire2", id)}
         onGeneral={onGeneral}
         onZoom={zoom}
         minimapRef={minimapRef}
@@ -693,6 +751,11 @@ export function FilmSet() {
             Calidad {hud.takeResult.quality} · {hud.takeResult.playback === "great" ? "Plano limpio, emoción clara." : hud.takeResult.playback === "ok" ? "Usable, con algún ruido." : "Fuera de foco / cortado."}
           </p>
           <p className="mt-2 text-sm font-semibold text-fg">{hud.takeResult.summary}</p>
+          {hud.takeResult.money && (
+            <p className="mt-1 text-xs text-muted">
+              Ingresos <span className="text-[#9fbf5a]">+${hud.takeResult.money.income.toLocaleString("es-AR")}</span> · Sueldos <span className="text-[#f0a090]">-${hud.takeResult.money.payroll.toLocaleString("es-AR")}</span> · Presupuesto <strong className="text-fg">{hud.takeResult.money.budget < 0 ? "-" : ""}${Math.abs(hud.takeResult.money.budget).toLocaleString("es-AR")}</strong>
+            </p>
+          )}
           <p className="mt-1 text-xs text-muted">
             Progreso del día: {hud.takeResult.dayGoodTakes}/{hud.takeResult.dayTarget} tomas buenas
             {hud.takeResult.dayComplete ? " — ¡Día completo!" : ""}
@@ -707,12 +770,15 @@ export function FilmSet() {
 
       {playing && gamePath.length > 0 && (
         <GameMenus
+          hud={hud}
           path={gamePath}
           snap={snap}
           director={directorRef.current}
           nav={{ back: routeBack, forward: routeForward, push: routePush }}
           onClose={() => routePush(["play"])}
           onMainMenu={() => routePush(["menu"])}
+          onOrder={onOrder}
+          onStaff={onStaff}
           onStoryDecision={(choice) => run((sim) => sim.storyDecision(choice.consequence, choice.effects.quality ?? 0, choice.effects.tension ?? 0, choice.effects.morale ?? 0))}
         />
       )}

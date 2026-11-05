@@ -20,16 +20,18 @@ export function CrewRoster({ people, selectedId, portraits, onSelect, onOptions 
       {people.map((p) => {
         const on = p.id === selectedId;
         const url = portraits[p.id];
+        const vacant = p.employed === false;
         return (
           <button key={p.id} type="button" onClick={() => onSelect(p.id)} aria-label={`${p.name}, ${p.role}`} aria-pressed={on}
-            className={`relative size-11 overflow-hidden rounded-lg border-2 bg-[#0a0e06]/95 shadow-lg ${on ? "border-[#e2b340]" : "border-[#4a6b28]"}`}>
+            className={`relative size-11 overflow-hidden rounded-lg border-2 bg-[#0a0e06]/95 shadow-lg ${on ? "border-[#e2b340]" : "border-[#4a6b28]"} ${vacant ? "opacity-50 grayscale" : ""}`}>
             {url ? (
               <span className="block h-full w-full" style={{ backgroundImage: `url(${url})`, backgroundSize: "230%", backgroundPosition: "50% 6%", backgroundRepeat: "no-repeat", imageRendering: "pixelated" }} />
             ) : (
               <span className="grid h-full w-full place-items-center text-base font-bold text-[#9fbf5a]">{p.name[0]}</span>
             )}
             <span className="absolute inset-x-0 bottom-0 bg-black/70 text-center text-[8px] font-bold leading-tight text-white">{p.name}</span>
-            {DOT[p.state] && <span className="absolute right-0.5 top-0.5 size-2 rounded-full" style={{ background: DOT[p.state] }} />}
+            {vacant && <span className="absolute inset-0 grid place-items-center bg-black/40 text-lg font-bold text-[#e2b340]">+</span>}
+            {!vacant && DOT[p.state] && <span className="absolute right-0.5 top-0.5 size-2 rounded-full" style={{ background: DOT[p.state] }} />}
           </button>
         );
       })}

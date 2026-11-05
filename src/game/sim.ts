@@ -24,11 +24,11 @@ export type Person = {
   cooldown: number; napping: boolean; partner: CrewId | null; bubble: Bubble | null;
   ring: number; dragging: boolean; dragOffsetX: number; dragOffsetY: number;
   dragStartedAway: boolean; dragActivated: boolean; homeMap: MapId; carrying: boolean;
-  visible: boolean;
+  visible: boolean; employed: boolean; leaving: boolean;
 };
 export type Particle = { kind: "z" | "steam" | "confetti" | "tape"; x: number; y: number; vx: number; vy: number; life: number; max: number; char: string };
 export type LogLine = { id: number; who: string; text: string; kind: BubbleKind };
-export type HudPerson = { id: CrewId; name: string; role: string; state: Mood; moving: boolean };
+export type HudPerson = { id: CrewId; name: string; role: string; state: Mood; moving: boolean; employed?: boolean };
 export type Phase = "guion" | "prep" | "rolling" | "cut" | "carry" | "editing" | "idle";
 export type CrisisOption = { label: string; quality: number; stress: number; log: string };
 export type Crisis = {
@@ -39,6 +39,7 @@ export type TakeResult = {
   stars: number; quality: number; good: boolean;
   summary: string; playback: "great" | "ok" | "bad";
   dayGoodTakes: number; dayTarget: number; dayComplete: boolean;
+  money?: { income: number; payroll: number; net: number; budget: number };
 };
 export type BondInfo = { a: CrewId; b: CrewId; label: string; level: number };
 export type Hud = {
@@ -50,6 +51,10 @@ export type Hud = {
   genre?: string; unlockedGenres?: string[];
   crisis?: Crisis | null; takeResult?: TakeResult | null;
   onMarkReady?: boolean; bonds?: BondInfo[];
+  progress?: import("@/game/progress").ProgressView; filmSummary?: { xpGained: number; repDelta: number; result: string; level: number } | null;
+  budget?: number; payroll?: number; ledger?: import("@/game/studio").LedgerEntry[]; staff?: import("@/game/studio").StaffView[]; gameOverReason?: "lives" | "bankrupt" | null;
+  departments?: import("@/game/departments").DeptView[]; alerts?: string[]; hype?: number;
+  rescuesTotal?: number; missions?: import("@/game/missions").MissionView[]; missionToast?: { id: number; text: string } | null;
   storyTitle?: string; storyPremise?: string; chapterTitle?: string; chapterBriefing?: string;
   chapterIndex?: number; chapterCount?: number; lives?: number; campaignComplete?: boolean; gameOver?: boolean;
 };
@@ -79,7 +84,7 @@ function clampPoint(x: number, y: number): [number, number] {
 
 export function createSim(onLog: (line: LogLine) => void) {
   let logId = 1, take = 1, sceneIndex = 0, stress = 12, quality = 8, paused = false;
-  let shake = 0, time = 0, timeLeft = 90, chatCooldown = 10.5, manualRescues = 0;
+  let rescuesTotal = 0, shake = 0, time = 0, timeLeft = 90, chatCooldown = 10.5, manualRescues = 0;
   let pending: Chat | null = null;
   let phase: Phase = "guion", phaseTimer = 10, map: MapId = "guion";
   let transition: Transition | null = null;
@@ -95,7 +100,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       stateTimer: 0, decision: 10 + Math.random() * 6, boredom: 0, cooldown: 4,
       napping: false, partner: null, bubble: null, ring: 0, dragging: false,
       dragOffsetX: 0, dragOffsetY: 0, dragStartedAway: false, dragActivated: false, carrying: false,
-      visible: true,
+      visible: true, employed: true, leaving: false,
     };
   });
   const byId = (id: CrewId) => people.find((p) => p.id === id)!;
@@ -138,6 +143,33 @@ export function createSim(onLog: (line: LogLine) => void) {
     p.decision = 9 + Math.random() * 6;
   }
 
+  /** Quien no está contratado no aparece en el mapa (salvo que esté saliendo por la puerta). */
+  function applyEmployment() {
+    for (const p of people) if (!p.employed && !p.leaving) p.visible = false;
+  }
+
+  /** Contrata o despide: el personaje entra o sale del estudio por la puerta. */
+  function setEmployed(id: CrewId, employed: boolean, instant = false) {
+    const p = byId(id);
+    if (p.employed === employed && !p.leaving) return;
+    p.employed = employed;
+    if (!employed) {
+      if (instant || !p.visible) { p.leaving = false; p.visible = false; return; }
+      p.leaving = true; p.dragging = false; p.partner = null; p.napping = false;
+      say(p, "Entendido. Gracias por todo.", "ok");
+    } else {
+      p.leaving = false; p.state = "work"; p.boredom = 0; p.cooldown = 6; p.napping = false; p.partner = null;
+      const st = STATIONS[map][p.id];
+      if (st) {
+        const door = DOOR[map];
+        p.homeX = st.x; p.homeY = st.y; p.tx = st.x; p.ty = st.y;
+        if (instant) { p.x = st.x; p.y = st.y; p.state = st.seated ? "seated" : "work"; }
+        else { p.x = door.x - 0.02; p.y = door.y - 0.01; say(p, "¡Primer día! A trabajar.", "ok"); burst("confetti", door.x, door.y - 0.08, 6); }
+        p.visible = true;
+      } else p.visible = false;
+    }
+  }
+
   function placeOnMapInstant(target: MapId) {
     map = target;
     const stations = STATIONS[target];
@@ -155,6 +187,7 @@ export function createSim(onLog: (line: LogLine) => void) {
         p.visible = false;
       }
     }
+    applyEmployment();
   }
 
   function startTransition(target: MapId, nextPhase: Phase, afterEnter?: () => void) {
@@ -212,6 +245,7 @@ export function createSim(onLog: (line: LogLine) => void) {
       p.facing = -1;
       i++;
     }
+    applyEmployment();
     transition = { target, nextPhase, stage: "enter", timer: 2.2 + people.length * ENTER_STAGGER, afterEnter };
   }
 
@@ -230,6 +264,7 @@ export function createSim(onLog: (line: LogLine) => void) {
         p.visible = false;
       }
     }
+    applyEmployment();
     const cb = afterEnter;
     transition = null;
     cb?.();
@@ -385,6 +420,17 @@ export function createSim(onLog: (line: LogLine) => void) {
 
     for (const p of people) {
       if (!p.visible) continue;
+      if (p.leaving) {
+        const door = DOOR[map];
+        p.state = "work"; p.partner = null; p.tx = door.x; p.ty = door.y;
+        const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy);
+        if (d < 0.03) { p.leaving = false; p.visible = false; continue; }
+        const stepDist = Math.min(d, SPEED * 1.2 * dt);
+        p.x += (dx / d) * stepDist; p.y += (dy / d) * stepDist;
+        p.facing = dx < 0 ? -1 : 1;
+        if (p.bubble) { p.bubble.life -= dt; if (p.bubble.life <= 0) p.bubble = null; }
+        continue;
+      }
       if (p.bubble) { p.bubble.life -= dt; if (p.bubble.life <= 0) p.bubble = null; }
       p.ring = Math.max(0, p.ring - dt); p.cooldown = Math.max(0, p.cooldown - dt);
 
@@ -540,7 +586,7 @@ export function createSim(onLog: (line: LogLine) => void) {
     if (dist(nx, ny, p.homeX, p.homeY) <= 0.12) {
       p.x = p.homeX; p.y = p.homeY; p.state = "work";
       if (wasAway) {
-        manualRescues = Math.min(RESCUE_GOAL, manualRescues + 1);
+        manualRescues = Math.min(RESCUE_GOAL, manualRescues + 1); rescuesTotal += 1;
         quality = clamp(quality + 7, 0, 100); stress = clamp(stress - 4, 0, 100);
         say(p, "¡Bien! Recuperé mi puesto.", "ok");
       }
@@ -573,6 +619,16 @@ export function createSim(onLog: (line: LogLine) => void) {
     } else if (cmd === "scold") {
       if (p.id !== "director") scold(p, p.state === "sleep" ? "sleep" : "work");
     }
+  }
+
+  /** Ajuste silencioso de calidad / estrés / tiempo (lo usan los departamentos). */
+  function adjust(dq: number, ds: number, dtime = 0) {
+    quality = clamp(quality + dq, 0, 100); stress = clamp(stress + ds, 0, 100);
+    if (dtime) timeLeft = Math.max(0, timeLeft + dtime);
+  }
+  /** Una persona habla / hace una seña (burbuja y aro) sin cambiar su estado. */
+  function speak(id: CrewId, text: string, kind: BubbleKind = "ok") {
+    const p = byId(id); p.ring = 2.2; say(p, text, kind); burst("confetti", p.x, p.y - 0.08, 4);
   }
 
   function focus(id: CrewId) {
@@ -636,10 +692,10 @@ export function createSim(onLog: (line: LogLine) => void) {
         : phase === "editing" ? "Editar ritmo y continuidad" : "Preparar la siguiente escena",
       stationCount: people.filter((p) => p.visible && (p.state === "work" || p.state === "seated") && dist(p.x, p.y, p.homeX, p.homeY) < 0.05).length,
       coffeeCount: people.filter((p) => p.visible && p.state === "coffee").length,
-      manualRescues, rescueGoal: RESCUE_GOAL,
+      manualRescues, rescueGoal: RESCUE_GOAL, rescuesTotal,
       people: people.map((p) => ({
         id: p.id, name: p.name, role: p.role, state: p.state,
-        moving: p.visible && (p.state === "work" || p.state === "coffee" || p.carrying) && dist(p.x, p.y, p.tx, p.ty) > 0.02,
+        moving: p.visible && (p.state === "work" || p.state === "coffee" || p.carrying) && dist(p.x, p.y, p.tx, p.ty) > 0.02, employed: p.employed,
       })),
       phase, map, mapLabel: MAP_LABEL[map],
       transitioning: !!transition,
@@ -653,7 +709,7 @@ export function createSim(onLog: (line: LogLine) => void) {
 
   return {
     people, particles, step, accion, coordinate, scold: scoldRandom, chaos, corten,
-    click, grab, drag, drop, cancelDrag, focus, commandCrew, goMap, hud, storyDecision,
+    click, grab, drag, drop, cancelDrag, focus, commandCrew, adjust, speak, setEmployed, goMap, hud, storyDecision,
     resolveCrisis, dismissTakeResult,
     get shake() { return shake; }, get map() { return map; }, get phase() { return phase; },
   };
