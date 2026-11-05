@@ -401,7 +401,7 @@ export function FilmSet() {
         <div>
           <p className="text-[10px] font-bold tracking-[0.22em] text-[#9fbf5a]">PIXEL SET · COMMAND CENTER</p>
           <h1 className="font-display text-xl text-white drop-shadow sm:text-3xl">Estudio en vivo</h1>
-          <p className="text-xs text-white/70">{hud.mood}</p>
+          <p className="text-xs text-white/70">{hud.mapLabel} · {hud.mood}</p>
         </div>
         <div className="rounded border border-[#4a6b28] bg-[#0a0e06]/90 px-2 py-1 text-[10px] text-[#9fbf5a]">
           ZOOM {(camRef.current.zoom * 100) | 0}%
