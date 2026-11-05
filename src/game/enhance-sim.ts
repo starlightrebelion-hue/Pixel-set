@@ -2,6 +2,7 @@ import { DEFAULT_STORY, type StoryDefinition } from "@/game/stories";
 import { emptyCounters, missionsFor, viewMissions, type MissionDef } from "@/game/missions";
 import { DEPARTMENTS, computeEffects, deptOf, type BoostKey, type DeptView, type Effects } from "@/game/departments";
 import { BANKRUPT_AT, HIRE_FEE, INCOME, SEVERANCE, START_BUDGET, UPGRADE_FEE, initialStaff, payrollOf, staffView, type LedgerEntry } from "@/game/studio";
+import { LEVEL_NAME, levelOf, loadProgress, perksFor, saveProgress, viewProgress } from "@/game/progress";
 import type { CrewId } from "@/game/crew";
 import type { Hud, LogLine, Sim } from "@/game/sim";
 
@@ -89,6 +90,37 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   let chapterIdx = 0, lives = 3, campaignComplete = false, gameOver = false;
   const chapter = () => story.chapters[chapterIdx] ?? story.chapters[story.chapters.length - 1]!;
   const DAY_TARGET_FN = () => 2 + chapterIdx;
+  // Progresión del estudio (se guarda entre películas)
+  let progress = loadProgress();
+  let perks = perksFor(levelOf(progress.xp).level);
+  let sessionXp = 0, filmFinished = false, filmIncome = 0, starsSum = 0, takesCount = 0, livesLost = 0;
+  let filmSummary: { xpGained: number; repDelta: number; result: string; level: number } | null = null;
+  function gainXp(n: number) {
+    const before = levelOf(progress.xp).level;
+    progress = { ...progress, xp: progress.xp + n };
+    sessionXp += n;
+    const after = levelOf(progress.xp).level;
+    saveProgress(progress);
+    if (after > before) {
+      perks = perksFor(after);
+      setToast(`⭐ ¡Nivel ${after}! ${LEVEL_NAME[after - 1]}`);
+      onLog({ id: Date.now() + Math.random(), who: "Nora", text: `Subimos a nivel ${after}: ${LEVEL_NAME[after - 1]}. Hay ventajas nuevas.`, kind: "dir" });
+    }
+  }
+  function finishFilm(result: "completa" | "fracaso" | "quiebra") {
+    if (filmFinished) return;
+    filmFinished = true;
+    const avg = takesCount ? starsSum / takesCount : 0;
+    const delta = result === "completa" ? Math.round(avg * 6) + 4 + (livesLost === 0 ? 5 : 0) : result === "fracaso" ? -8 : -12;
+    const rep = Math.max(0, Math.min(100, progress.reputation + delta));
+    progress = {
+      ...progress, reputation: rep,
+      films: [{ title: story.title, genre: story.genre, stars: starsSum, earned: Math.round(filmIncome), result, rep: delta, at: Date.now() }, ...progress.films].slice(0, 12),
+    };
+    saveProgress(progress);
+    filmSummary = { xpGained: sessionXp, repDelta: delta, result, level: levelOf(progress.xp).level };
+    onLog({ id: Date.now() + Math.random(), who: "Nora", text: `Reputación del estudio ${delta >= 0 ? "+" : ""}${delta} (${Math.round(rep)}).`, kind: delta >= 0 ? "ok" : "angry" });
+  }
   // Estudio: presupuesto, plantilla y libro de cuentas
   let budget = START_BUDGET;
   const staff = initialStaff(DEPARTMENTS.map((d) => d.id));
@@ -145,8 +177,8 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     counters.stars += stars;
     if (good) { counters.good_takes += 1; if (stressNow <= chapter().stressLimit) counters.clean_takes += 1; }
     if (stars === 0 && !gameOver) {
-      lives = Math.max(0, lives - 1);
-      if (lives === 0) { gameOver = true; gameOverReason = "lives"; onLog({ id: Date.now(), who: "Marcos", text: "Nos quedamos sin intentos. Fin de la jornada.", kind: "angry" }); }
+      lives = Math.max(0, lives - 1); livesLost += 1;
+      if (lives === 0) { gameOver = true; gameOverReason = "lives"; finishFilm("fracaso"); onLog({ id: Date.now(), who: "Marcos", text: "Nos quedamos sin intentos. Fin de la jornada.", kind: "angry" }); }
       else onLog({ id: Date.now(), who: "Marcos", text: `Toma perdida. Quedan ${lives} intentos.`, kind: "angry" });
     }
     if (dayGoodTakes >= 2 && !unlockedGenres.includes("Thriller")) {
@@ -158,12 +190,14 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
       onLog({ id: Date.now(), who: "Sol", text: "Hay material para una comedia.", kind: "ok" });
     }
     // Ingresos y sueldos de la toma
-    const income = stars * INCOME.perStar + (good ? INCOME.goodBonus : 0);
-    const payroll = payrollOf(staff);
+    const income = Math.round((stars * INCOME.perStar + (good ? INCOME.goodBonus : 0)) * viewProgress(progress).incomeMul);
+    const payroll = Math.round(payrollOf(staff) * perks.payrollMul);
+    filmIncome += income; starsSum += stars; takesCount += 1;
+    gainXp(stars * 8 + (good ? 12 : 0));
     book(`Toma: ${"★".repeat(stars) || "sin estrellas"}`, income);
     if (payroll > 0) book("Sueldos del equipo", -payroll);
     if (budget <= BANKRUPT_AT && !gameOver) {
-      gameOver = true; gameOverReason = "bankrupt";
+      gameOver = true; gameOverReason = "bankrupt"; finishFilm("quiebra");
       onLog({ id: Date.now() + Math.random(), who: "Marcos", text: "El estudio quebró: no hay presupuesto para seguir.", kind: "angry" });
     } else if (budget < 0) onLog({ id: Date.now() + Math.random(), who: "Marcos", text: `Estamos en números rojos (${money(budget)}). No podemos contratar.`, kind: "angry" });
     return {
@@ -209,6 +243,7 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     for (const m of viewMissions(defs, counters, claimed)) {
       if (!m.done || m.claimed) continue;
       claimed.add(m.id);
+      gainXp(m.required ? 25 : 40);
       onLog({ id: Date.now() + Math.random(), who: "Marcos", text: `Misión cumplida: ${m.label}.${m.reward ? ` Recompensa: ${m.reward.label}.` : ""}`, kind: "dir" });
       setToast(`✓ ${m.label}${m.reward ? ` · ${m.reward.label}` : ""}`);
       if (m.reward?.lives) lives = Math.min(5, lives + m.reward.lives);
@@ -220,7 +255,8 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   function advanceChapter() {
     dayGoodTakes = 0;
     book(`Premio del capítulo ${chapterIdx + 1}`, INCOME.chapterPrize);
-    if (chapterIdx + 1 >= story.chapters.length) { campaignComplete = true; setToast("🏆 ¡Película terminada!"); onLog({ id: Date.now(), who: "Rey", text: `¡Fin de "${story.title}"! El equipo terminó la película.`, kind: "dir" }); return; }
+    gainXp(80);
+    if (chapterIdx + 1 >= story.chapters.length) { gainXp(250); finishFilm("completa"); campaignComplete = true; setToast("🏆 ¡Película terminada!"); onLog({ id: Date.now(), who: "Rey", text: `¡Fin de "${story.title}"! El equipo terminó la película.`, kind: "dir" }); return; }
     chapterIdx += 1;
     counters = emptyCounters(); claimed = new Set(); defs = missionsFor(chapterIdx, chapter());
     rescueBase = origHud().rescuesTotal ?? 0;
@@ -282,7 +318,7 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     if (e.hype) hype = Math.min(100, hype + e.hype);
     if (e.boost) boosts[e.boost.key] = e.boost.seconds * (lvl === 2 ? 1.25 : 1);
     if (e.arm === "review") reviewArmed = true;
-    cooldowns[key] = order.cooldown * (lvl === 2 ? 0.8 : 1);
+    cooldowns[key] = order.cooldown * (lvl === 2 ? 0.8 : 1) * perks.cooldownMul;
     base.speak(crewId, say, q < 0 ? "angry" : "ok");
     setToast(`${order.icon} ${order.label}`);
     return { ok: true, message: say };
@@ -291,7 +327,7 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   function hire(crewId: CrewId, level: 1 | 2): { ok: boolean; message: string } {
     const name = deptOf(crewId)?.name ?? crewId;
     if ((staff[crewId] ?? 0) !== 0) return { ok: false, message: `${name} ya tiene personal.` };
-    const fee = HIRE_FEE[level];
+    const fee = Math.round(HIRE_FEE[level] * perks.hireMul);
     if (budget < fee) return { ok: false, message: `Falta presupuesto: ${money(fee)} (hay ${money(budget)}).` };
     book(`Contratación ${level === 2 ? "senior" : "junior"} · ${name}`, -fee);
     staff[crewId] = level;
@@ -302,8 +338,9 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
   function upgrade(crewId: CrewId): { ok: boolean; message: string } {
     const name = deptOf(crewId)?.name ?? crewId;
     if (staff[crewId] !== 1) return { ok: false, message: "Sólo se puede mejorar a un junior." };
-    if (budget < UPGRADE_FEE) return { ok: false, message: `Falta presupuesto: ${money(UPGRADE_FEE)}.` };
-    book(`Ascenso a senior · ${name}`, -UPGRADE_FEE);
+    const upFee = Math.round(UPGRADE_FEE * perks.hireMul);
+    if (budget < upFee) return { ok: false, message: `Falta presupuesto: ${money(upFee)}.` };
+    book(`Ascenso a senior · ${name}`, -upFee);
     staff[crewId] = 2;
     base.speak(crewId, "¡Gracias por la confianza! Voy a rendir más.", "ok");
     setToast(`⭐ ${name}: ascendido a senior`);
@@ -375,8 +412,8 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
       unlockedGenres: [...unlockedGenres],
       storyTitle: story.title, storyPremise: story.premise, chapterTitle: chapter().title, chapterBriefing: chapter().briefing,
       chapterIndex: chapterIdx + 1, chapterCount: story.chapters.length, lives, campaignComplete, gameOver,
-      budget: Math.round(budget), payroll: payrollOf(staff), ledger: ledger.slice(0, 6),
-      staff: DEPARTMENTS.map((d) => staffView(d.id, staff[d.id] ?? 0)),
+      budget: Math.round(budget), payroll: Math.round(payrollOf(staff) * perks.payrollMul), progress: viewProgress(progress), filmSummary, ledger: ledger.slice(0, 6),
+      staff: DEPARTMENTS.map((d) => staffView(d.id, staff[d.id] ?? 0, perks.hireMul)),
       gameOverReason,
       departments: departmentViews(h.phase),
       alerts: h.phase === "prep" || h.phase === "rolling" ? fx.alerts.filter(Boolean) : [],
@@ -413,7 +450,10 @@ export function enhanceSim(base: Sim, onLog: (line: LogLine) => void): Enhanced 
     for (const k of Object.keys(boosts)) delete boosts[k as BoostKey];
     for (const k of Object.keys(cooldowns)) delete cooldowns[k];
     hype = 0; reviewArmed = false;
-    budget = START_BUDGET; ledger = []; gameOverReason = null;
+    progress = loadProgress(); perks = perksFor(levelOf(progress.xp).level);
+    sessionXp = 0; filmFinished = false; filmIncome = 0; starsSum = 0; takesCount = 0; livesLost = 0; filmSummary = null;
+    lives = 3 + perks.extraLives; hype = Math.round(progress.reputation * 0.3);
+    budget = START_BUDGET + perks.startBudgetBonus; ledger = []; gameOverReason = null;
     { const init = initialStaff(DEPARTMENTS.map((d) => d.id)); for (const d of DEPARTMENTS) { staff[d.id] = init[d.id]!; base.setEmployed(d.id, true, true); } }
     counters = emptyCounters(); claimed = new Set(); defs = missionsFor(0, chapter()); rescueBase = origHud().rescuesTotal ?? 0; toast = null;
     dayGoodTakes = 0; totalStars = 0; lastStars = 0; crisis = null; takeResult = null; crisisCooldown = 18;

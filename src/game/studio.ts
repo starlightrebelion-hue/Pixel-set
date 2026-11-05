@@ -22,13 +22,13 @@ export const initialStaff = (ids: CrewId[]): Record<CrewId, Level> =>
 
 export const payrollOf = (staff: Record<CrewId, Level>) => (Object.values(staff) as Level[]).reduce<number>((a, l) => a + SALARY[l], 0);
 
-export function staffView(id: CrewId, level: Level): StaffView {
+export function staffView(id: CrewId, level: Level, feeMul = 1): StaffView {
   return {
     id, level, levelName: LEVEL_NAME[level], salary: SALARY[level],
     canFire: id !== "director" && level > 0,
-    hireJunior: level === 0 ? HIRE_FEE[1] : null,
-    hireSenior: level === 0 ? HIRE_FEE[2] : null,
-    upgrade: level === 1 ? UPGRADE_FEE : null,
+    hireJunior: level === 0 ? Math.round(HIRE_FEE[1] * feeMul) : null,
+    hireSenior: level === 0 ? Math.round(HIRE_FEE[2] * feeMul) : null,
+    upgrade: level === 1 ? Math.round(UPGRADE_FEE * feeMul) : null,
     severance: SEVERANCE[level],
   };
 }

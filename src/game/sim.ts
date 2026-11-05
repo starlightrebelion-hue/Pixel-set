@@ -51,6 +51,7 @@ export type Hud = {
   genre?: string; unlockedGenres?: string[];
   crisis?: Crisis | null; takeResult?: TakeResult | null;
   onMarkReady?: boolean; bonds?: BondInfo[];
+  progress?: import("@/game/progress").ProgressView; filmSummary?: { xpGained: number; repDelta: number; result: string; level: number } | null;
   budget?: number; payroll?: number; ledger?: import("@/game/studio").LedgerEntry[]; staff?: import("@/game/studio").StaffView[]; gameOverReason?: "lives" | "bankrupt" | null;
   departments?: import("@/game/departments").DeptView[]; alerts?: string[]; hype?: number;
   rescuesTotal?: number; missions?: import("@/game/missions").MissionView[]; missionToast?: { id: number; text: string } | null;

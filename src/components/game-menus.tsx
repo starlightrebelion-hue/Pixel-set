@@ -6,6 +6,8 @@ import { AdvisorPanel } from "@/components/advisor-panel";
 import type { StoryChoice } from "@/game/story-engine";
 import type { Hud } from "@/game/sim";
 import type { CrewId } from "@/game/crew";
+import { ProgressSummary } from "@/components/progress-view";
+import { GENRE_LEVEL } from "@/game/progress";
 
 type Nav = { back: () => void; forward: () => void; push: (r: string[]) => void };
 type Props = {
@@ -22,7 +24,7 @@ type Props = {
 };
 
 const TITLES: Record<string, string> = {
-  opts: "Opciones", missions: "Misiones", departments: "Departamentos", production: "Producción y presupuesto", staff: "Contratación", scene: "Dirigir escena", genre: "Género", place: "Lugar", time: "Hora del día", weather: "Clima",
+  opts: "Opciones", missions: "Misiones", departments: "Departamentos", production: "Producción y presupuesto", progress: "Progresión del estudio", staff: "Contratación", scene: "Dirigir escena", genre: "Género", place: "Lugar", time: "Hora del día", weather: "Clima",
   dress: "Decorado", plan: "Plan de 15 escenas", script: "Escribir guion", continuity: "Continuidad", story: "Historia", studio: "Estudio y asesores", help: "Cómo jugar",
 };
 
@@ -57,6 +59,7 @@ export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu,
     body = (
       <div className="grid gap-2">
         <p className="text-sm text-[#c8d4a8]">¿Qué querés hacer?</p>
+        {hud.progress && <Tile icon="🏆" title="Progresión del estudio" value={`Nivel ${hud.progress.level} · ${hud.progress.levelName} · ${hud.progress.tier}`} onClick={() => go("progress")} />}
         <Tile icon="💰" title="Producción y presupuesto" value={`${(hud.budget ?? 0) < 0 ? "-" : ""}$${Math.abs(hud.budget ?? 0).toLocaleString("es-AR")} · sueldos $${hud.payroll ?? 0} por toma`} onClick={() => go("production")} />
         <Tile icon="👥" title="Contratación" value="Contratar, ascender o despedir" onClick={() => go("staff")} />
         <Tile icon="🏭" title="Departamentos" value={(hud.alerts?.length ?? 0) > 0 ? `⚠ ${hud.alerts![0]}` : "Estado y órdenes de cada área"} onClick={() => go("departments")} />
@@ -96,6 +99,8 @@ export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu,
         </div>
       </div>
     );
+  } else if (key === "progress") {
+    body = hud.progress ? <ProgressSummary view={hud.progress} /> : <p className="text-sm text-[#c8d4a8]">Sin datos todavía.</p>;
   } else if (key === "production") {
     const m = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("es-AR")}`;
     const budget = hud.budget ?? 0;
@@ -214,9 +219,15 @@ export function GameMenus({ hud, path, snap, director, nav, onClose, onMainMenu,
   } else if (key === "genre" && snap && director) {
     body = (
       <div className="grid grid-cols-2 gap-2">
-        {director.genres.map((g) => (
-          <button key={g} type="button" className={big(g === snap.genre)} onClick={done(() => director.setGenre(g as Genre))}>{g}</button>
-        ))}
+        {director.genres.map((g) => {
+          const need = GENRE_LEVEL[g] ?? 1;
+          const locked = !!hud.progress && !hud.progress.unlockedGenres.includes(g);
+          return (
+            <button key={g} type="button" disabled={locked} className={`${big(g === snap.genre)} ${locked ? "opacity-50" : ""}`} onClick={done(() => director.setGenre(g as Genre))}>
+              {locked ? `🔒 ${g}` : g}{locked && <span className="block text-[10px] font-normal text-[#a8b88a]">Nivel {need}</span>}
+            </button>
+          );
+        })}
       </div>
     );
   } else if (key === "place" && snap && director) {
