@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ADVISORS_FOR_HIRE,
   advisorOffers,
@@ -8,10 +8,13 @@ import {
   loadDevelopment,
   resetDevelopment,
   saveDevelopment,
+  selectTheme,
   skipDay,
   type DevelopmentState,
 } from "@/game/development";
 import { REUNION_ROOM_URL } from "@/game/reunion-asset";
+import { briefThemesLocal, studioMarketingAgent } from "@/game/agents/studio-marketing-agent";
+import type { ThemeBrief } from "@/game/agents/types";
 
 const statusLabel = {
   borrador: "Borrador",
@@ -22,6 +25,20 @@ const statusLabel = {
 export function AdvisorPanel({ onScriptApproved }: { onScriptApproved?: () => void }) {
   const [dev, setDev] = useState<DevelopmentState>(loadDevelopment);
   const [selectedAdvisor, setSelectedAdvisor] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+
+  const marketingBrief = useMemo(() => {
+    return briefThemesLocal({
+      projectTitle: dev.projectTitle,
+      budget: dev.budget,
+      day: dev.day,
+      approval: dev.approval,
+      currentGenre: dev.selectedGenre,
+      selectedThemeId: dev.selectedThemeId,
+      marketSignals: dev.marketSignals,
+      ceoNotes: dev.ceoNotes,
+    });
+  }, [dev.projectTitle, dev.budget, dev.day, dev.approval, dev.selectedGenre, dev.selectedThemeId, dev.marketSignals, dev.ceoNotes]);
 
   useEffect(() => {
     saveDevelopment(dev);
@@ -37,22 +54,105 @@ export function AdvisorPanel({ onScriptApproved }: { onScriptApproved?: () => vo
     if (next.hired.length && !selectedAdvisor) setSelectedAdvisor(next.hired[0]!);
   };
 
+  const pickTheme = (theme: ThemeBrief) => {
+    update(
+      selectTheme(dev, {
+        id: theme.id,
+        title: theme.title,
+        genre: theme.genre,
+        speech: marketingBrief.speech,
+      }),
+    );
+  };
+
+  const refreshMarketing = async () => {
+    setAiBusy(true);
+    try {
+      const result = await studioMarketingAgent.run({
+        projectTitle: dev.projectTitle,
+        budget: dev.budget,
+        day: dev.day,
+        approval: dev.approval,
+        currentGenre: dev.selectedGenre,
+        selectedThemeId: dev.selectedThemeId,
+        marketSignals: dev.marketSignals,
+        ceoNotes: dev.ceoNotes,
+      });
+      setDev((current) => ({
+        ...current,
+        marketingSpeech: result.speech,
+        log: [`Nora: ${result.speech}`, ...current.log].slice(0, 30),
+      }));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
   return (
     <section className="mt-3 overflow-hidden rounded-lg border border-primary/40 bg-surface">
       <div className="relative aspect-[16/7] w-full bg-bg">
-        <img
-          src={REUNION_ROOM_URL}
-          alt="Sala de reunión"
-          className="h-full w-full object-cover opacity-90"
-        />
+        <img src={REUNION_ROOM_URL} alt="Sala de reunión" className="h-full w-full object-cover opacity-90" />
         <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/40 to-transparent" />
         <div className="absolute bottom-3 left-3 right-3">
           <p className="text-xs font-bold tracking-[0.18em] text-primary">SALA DE REUNIÓN · DESARROLLO DE GUION</p>
           <h2 className="font-display text-2xl text-fg">{dev.projectTitle}</h2>
           <p className="text-sm text-muted">
-            Sol y Rey discuten el guion. Los asesores cobran por sesión; cada nota cuesta días y plata hasta aprobar.
+            Nora trae la línea del CEO y mercadeo. Sol y Rey desarrollan con asesores que cobran.
           </p>
         </div>
+      </div>
+
+      <div className="border-b border-border bg-bg/80 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold tracking-[0.18em] text-primary">AGENTE · DIR. DE ESTUDIO / MARKETING</p>
+            <h3 className="font-display text-xl text-fg">Nora Vega</h3>
+            <p className="mt-1 max-w-2xl text-sm text-fg">{dev.marketingSpeech ?? marketingBrief.speech}</p>
+            <p className="mt-1 text-xs text-muted">
+              Motor: {marketingBrief.fromAi ? "IA conectada" : "agente local (listo para IA)"} · system prompt preparado para LLM
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={aiBusy}
+            onClick={() => void refreshMarketing()}
+            className="min-h-10 rounded-md border border-primary bg-primary/15 px-3 text-sm font-semibold text-primary disabled:opacity-50"
+          >
+            {aiBusy ? "Consultando…" : "Pedir brief al estudio"}
+          </button>
+        </div>
+
+        <h4 className="mt-4 text-xs font-bold tracking-widest text-muted">TEMÁTICAS QUE EMPUJA EL ESTUDIO</h4>
+        <div className="mt-2 grid gap-2 md:grid-cols-3">
+          {marketingBrief.themes.map((theme) => {
+            const selected = dev.selectedThemeId === theme.id;
+            return (
+              <button
+                key={theme.id}
+                type="button"
+                disabled={dev.approved}
+                onClick={() => pickTheme(theme)}
+                className={`rounded-md border p-3 text-left ${selected ? "border-primary bg-primary/10" : "border-border bg-surface hover:border-primary"}`}
+              >
+                <span className="block text-sm font-bold text-fg">{theme.title}</span>
+                <span className="block text-xs text-primary">{theme.genre} · {theme.audience}</span>
+                <span className="mt-1 block text-xs text-muted">{theme.why}</span>
+                <span className="mt-2 block text-xs italic text-muted">«{theme.ceoLine}»</span>
+                <span className="mt-2 block text-xs text-primary">
+                  {selected ? "Línea elegida" : "Desarrollar esta temática →"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {dev.selectedThemeTitle ? (
+          <p className="mt-3 text-sm text-fg">
+            En desarrollo: <strong>{dev.selectedThemeTitle}</strong>
+            {dev.selectedGenre ? ` (${dev.selectedGenre})` : ""}. Sol reescribe sobre esta línea.
+          </p>
+        ) : (
+          <p className="mt-3 text-sm text-muted">Elegí una temática del estudio antes de contratar asesores de guion.</p>
+        )}
       </div>
 
       <div className="grid gap-3 p-4 sm:grid-cols-4">
@@ -105,7 +205,7 @@ export function AdvisorPanel({ onScriptApproved }: { onScriptApproved?: () => vo
                   <button
                     key={a.id}
                     type="button"
-                    disabled={hired || dev.budget < a.fee}
+                    disabled={hired || dev.budget < a.fee || !dev.selectedThemeId}
                     onClick={() => {
                       const next = hireAdvisor(dev, a.id);
                       update(next);
@@ -122,6 +222,9 @@ export function AdvisorPanel({ onScriptApproved }: { onScriptApproved?: () => vo
                 );
               })}
             </div>
+            {!dev.selectedThemeId ? (
+              <p className="mt-2 text-xs text-muted">Primero elegí la temática que trae Nora (CEO / mercadeo).</p>
+            ) : null}
           </div>
 
           <div className="mt-4 px-4">
@@ -156,7 +259,7 @@ export function AdvisorPanel({ onScriptApproved }: { onScriptApproved?: () => vo
 
           {dev.hired.length === 0 ? (
             <p className="mx-4 mt-4 mb-2 text-sm text-muted">
-              Contratá al menos un asesor para que Sol reciba notas y pueda reescribir ida y vuelta con Rey.
+              Contratá al menos un asesor para que Sol reciba notas y reescriba ida y vuelta con Rey.
             </p>
           ) : (
             <div className="m-4 grid gap-3 md:grid-cols-[12rem_1fr]">
@@ -178,7 +281,7 @@ export function AdvisorPanel({ onScriptApproved }: { onScriptApproved?: () => vo
                     <p className="text-xs font-bold tracking-widest text-primary">{active.role.toUpperCase()}</p>
                     <p className="text-sm text-muted">{active.name} — {active.specialty}</p>
                     <p className="mt-2 text-sm text-fg">
-                      Sol escucha. Rey discute. Elegí una nota para que la guionista reescriba (cuesta días y plata).
+                      Sol escucha. Rey discute. Elegí una nota para reescribir (cuesta días y plata).
                     </p>
                     <div className="mt-3 grid gap-2">
                       {active.options.map((opt) => (
