@@ -2,7 +2,7 @@ import type { Furn, Lighting, Location, Weather } from "@/game/scenery";
 import { drawGenreSet, type GenreId } from "@/game/genre-sets";
 import type { SetSnapshot } from "@/game/set-director";
 
-const GENRE_ID: Record<string, GenreId> = {
+export const GENRE_ID: Record<string, GenreId> = {
   Drama: "drama", Thriller: "noir", Comedia: "comedy", Terror: "horror", Romance: "romance", "Ciencia ficción": "science-fiction",
   Noir: "noir", Fantasía: "fantasy", Western: "western", Aventura: "adventure",
 };

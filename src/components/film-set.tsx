@@ -3,13 +3,14 @@ import { previewPathPrefix } from "@/lib/preview-path-prefix";
 import { CREW, type CrewId, type MapId } from "@/game/crew";
 import { tintNoraFromGuion } from "@/game/nora-tint";
 import { createSim, type Hud, type LogLine, type Person, type Sim } from "@/game/sim";
+import { GENRE_SLUGS } from "@/game/diorama-sets";
 import { enhanceSim, type Enhanced } from "@/game/enhance-sim";
 import { createCustomStory, isStoryDefinition, STORY_LIBRARY, type ChallengeStyle, type StoryDefinition, type StoryGenre } from "@/game/stories";
 import { drawGuionRoom, drawMontajeRoom } from "@/game/map-draw";
 import { AdvisorPanel } from "@/components/advisor-panel";
 import { SetDirectorPanel } from "@/components/set-director-panel";
 import { createSetDirector, type SetDirector, type SetSnapshot } from "@/game/set-director";
-import { drawScenery, drawTransition } from "@/game/scenery-draw";
+import { GENRE_ID, drawScenery, drawTransition } from "@/game/scenery-draw";
 import { StoryDirector } from "@/components/story-director";
 import { CommandBar } from "@/components/command-bar";
 import {
@@ -115,21 +116,25 @@ export function FilmSet() {
     const maps = new Map<MapId, HTMLImageElement>();
     // Fondos ilustrados opcionales: public/set/locations/<id>.png (o .jpg). Si no existen, decorado de código.
     const locImgs = new Map<string, HTMLImageElement | null>();
-    const getBackdrop = (id: string) => {
+    const getBackdrop = (id: string, genre: string) => {
       if (id === "estudio") return null;
-      if (!locImgs.has(id)) {
-        locImgs.set(id, null);
-        const exts = ["png", "jpg"];
+      const key = `${id}|${genre}`;
+      if (!locImgs.has(key)) {
+        locImgs.set(key, null);
+        // Primero la imagen del set; si no existe, la de género (public/set/diorama/genres/<slug>.png|jpg).
+        const gid = GENRE_ID[genre];
+        const slug = gid ? GENRE_SLUGS[gid] : null;
+        const paths = [`/set/locations/${id}.png`, `/set/locations/${id}.jpg`, ...(slug ? [`/set/diorama/genres/${slug}.png`, `/set/diorama/genres/${slug}.jpg`] : [])];
         const tryLoad = (i: number) => {
-          if (i >= exts.length) return;
+          if (i >= paths.length) return;
           const img = new Image();
-          img.onload = () => locImgs.set(id, img);
+          img.onload = () => locImgs.set(key, img);
           img.onerror = () => tryLoad(i + 1);
-          img.src = assetUrl(`/set/locations/${id}.${exts[i]}`);
+          img.src = assetUrl(paths[i]!);
         };
         tryLoad(0);
       }
-      return locImgs.get(id) ?? null;
+      return locImgs.get(key) ?? null;
     };
     let lastTake = 1;
     let loaded = 0;
@@ -217,7 +222,7 @@ export function FilmSet() {
       if (mapId === "set" && stage) {
         const tl = worldToScreen(0, 0.35, cam, cw, ch);
         const br = worldToScreen(1, 1, cam, cw, ch);
-        drawScenery(ctx, tl.x, tl.y, Math.max(40, br.x - tl.x), Math.max(40, br.y - tl.y), director.snapshot(), anim, stage, getBackdrop(director.snapshot().location.id));
+        drawScenery(ctx, tl.x, tl.y, Math.max(40, br.x - tl.x), Math.max(40, br.y - tl.y), director.snapshot(), anim, stage, getBackdrop(director.snapshot().location.id, director.snapshot().genre));
       } else if (mapId === "guion") {
         const tl = worldToScreen(0.05, 0.35, cam, cw, ch);
         const br = worldToScreen(0.95, 0.95, cam, cw, ch);
